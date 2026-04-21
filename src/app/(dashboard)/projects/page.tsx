@@ -13,7 +13,46 @@ import { FolderKanban, Plus, Search, Clock, Building2 } from "lucide-react";
 import Link from "next/link";
 import { Project, PROJECT_STATUSES } from "@/types";
 
-function ProjectForm({ onSave, onClose, defaultClientId }: { onSave: () => void; onClose: () => void; defaultClientId?: string }) {
+/* ── Label style shared in form ── */
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  fontSize: 12,
+  fontWeight: 600,
+  color: "var(--text-secondary)",
+  marginBottom: 5,
+  letterSpacing: "0.01em",
+};
+
+/* ── ProjectForm field — defined at MODULE level to avoid focus-loss bug ── */
+function ProjField({
+  label, name, type = "text", required = false,
+  value, onChange,
+}: {
+  label: string; name: string; type?: string; required?: boolean;
+  value: string | number;
+  onChange: (name: string, val: string) => void;
+}) {
+  return (
+    <div>
+      <label style={labelStyle}>
+        {label}
+        {required && <span style={{ color: "#EF4444", marginLeft: 3 }}>*</span>}
+      </label>
+      <input
+        type={type}
+        className="input-base"
+        required={required}
+        placeholder={label}
+        value={value as string}
+        onChange={(e) => onChange(name, e.target.value)}
+      />
+    </div>
+  );
+}
+
+function ProjectForm({ onSave, onClose, defaultClientId }: {
+  onSave: () => void; onClose: () => void; defaultClientId?: string;
+}) {
   const { data: clients } = useClients();
   const [form, setForm] = useState({
     name: "", client_id: defaultClientId ?? "", description: "", category: "",
@@ -25,6 +64,10 @@ function ProjectForm({ onSave, onClose, defaultClientId }: { onSave: () => void;
   });
   const [saving, setSaving] = useState(false);
 
+  function handleChange(name: string, val: string) {
+    setForm((p) => ({ ...p, [name]: ["estimated_hours", "progress_percent"].includes(name) ? Number(val) : val }));
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -33,59 +76,91 @@ function ProjectForm({ onSave, onClose, defaultClientId }: { onSave: () => void;
     onSave();
   }
 
-  const F = ({ label, name, type = "text", required = false }: { label: string; name: string; type?: string; required?: boolean }) => (
-    <div>
-      <label className="block text-[12.5px] font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>{label}</label>
-      <input
-        type={type}
-        className="input-base"
-        required={required}
-        value={(form as Record<string, string | number>)[name] as string}
-        onChange={(e) => setForm((p) => ({ ...p, [name]: type === "number" ? Number(e.target.value) : e.target.value }))}
-      />
-    </div>
-  );
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <F label="Project Name" name="name" required />
+    <form onSubmit={handleSubmit}>
+      {/* ── Section: Project Info ── */}
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-tertiary)", marginBottom: 12 }}>
+        Project Information
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 14px", marginBottom: 18 }}>
+        <ProjField label="Project Name" name="name" required value={form.name} onChange={handleChange} />
+
+        {/* Client */}
         <div>
-          <label className="block text-[12.5px] font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>Client *</label>
+          <label style={labelStyle}>
+            Client <span style={{ color: "#EF4444" }}>*</span>
+          </label>
           <select className="input-base" required value={form.client_id} onChange={(e) => setForm((p) => ({ ...p, client_id: e.target.value }))}>
             <option value="">Select client…</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
+
+        <ProjField label="Category" name="category" value={form.category} onChange={handleChange} />
+        <ProjField label="Estimated Hours" name="estimated_hours" type="number" value={form.estimated_hours} onChange={handleChange} />
+        <ProjField label="Start Date" name="start_date" type="date" value={form.start_date} onChange={handleChange} />
+        <ProjField label="Due Date" name="due_date" type="date" value={form.due_date} onChange={handleChange} />
+      </div>
+
+      {/* ── Section: Settings ── */}
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-tertiary)", marginBottom: 12, paddingTop: 6, borderTop: "1px solid var(--border-subtle)" }}>
+        Settings
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 14px", marginBottom: 18 }}>
         <div>
-          <label className="block text-[12.5px] font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>Status</label>
+          <label style={labelStyle}>Status</label>
           <select className="input-base" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}>
             {PROJECT_STATUSES.map((s) => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-[12.5px] font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>Priority</label>
+          <label style={labelStyle}>Priority</label>
           <select className="input-base" value={form.priority} onChange={(e) => setForm((p) => ({ ...p, priority: e.target.value }))}>
             {["critical", "high", "medium", "low"].map((p) => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
           </select>
         </div>
-        <F label="Start Date" name="start_date" type="date" />
-        <F label="Due Date" name="due_date" type="date" />
-        <F label="Estimated Hours" name="estimated_hours" type="number" />
-        <div>
-          <label className="block text-[12.5px] font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>Category</label>
-          <input className="input-base" value={form.category} onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))} placeholder="e.g. Custom Development" />
-        </div>
       </div>
-      <div>
-        <label className="block text-[12.5px] font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>Description</label>
-        <textarea className="input-base" rows={3} value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
+
+      {/* Description */}
+      <div style={{ marginBottom: 20 }}>
+        <label style={labelStyle}>Description</label>
+        <textarea
+          className="input-base"
+          rows={3}
+          placeholder="Optional project description…"
+          value={form.description}
+          onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+          style={{ resize: "vertical" }}
+        />
       </div>
-      <div className="flex justify-end gap-3 pt-2">
-        <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-        <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Saving…" : "Create Project"}</button>
+
+      {/* Actions */}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 16, borderTop: "1px solid var(--border-subtle)" }}>
+        <button type="button" className="btn btn-secondary" onClick={onClose} style={{ height: 36, fontSize: 13 }}>
+          Cancel
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={saving} style={{ height: 36, fontSize: 13, minWidth: 130 }}>
+          {saving ? "Saving…" : "Create Project"}
+        </button>
       </div>
     </form>
+  );
+}
+
+/* ── Stat card for summary row ── */
+function StatPill({ label, value, color, bg }: { label: string; value: number; color: string; bg: string }) {
+  return (
+    <div className="card" style={{ padding: "16px 18px", display: "flex", alignItems: "center", gap: 14 }}>
+      <div style={{ width: 38, height: 38, borderRadius: 10, background: bg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <FolderKanban size={16} style={{ color }} />
+      </div>
+      <div>
+        <div style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color, letterSpacing: "-0.5px" }}>{value}</div>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4, fontWeight: 500 }}>{label}</div>
+      </div>
+    </div>
   );
 }
 
@@ -113,109 +188,167 @@ export default function ProjectsPage() {
     <>
       <TopBar title="Projects" subtitle={`${projects.length} total projects`} />
 
-      <div className="p-8 animate-fade-in">
-        {/* Controls */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-tertiary)" }} />
-              <input className="input-base pl-9 h-9 w-64" placeholder="Search projects…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div style={{ padding: "24px 28px 36px" }} className="animate-fade-in">
+
+        {/* ── Summary cards ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14, marginBottom: 20 }}>
+          <StatPill label="Total"     value={projects.length}                                                          color="#4F46E5" bg="#EEF2FF" />
+          <StatPill label="Active"    value={projects.filter((p) => ["active", "in progress"].includes(p.status)).length} color="#059669" bg="#ECFDF5" />
+          <StatPill label="Completed" value={projects.filter((p) => p.status === "completed").length}                  color="#0EA5E9" bg="#F0F9FF" />
+          <StatPill label="Delayed"   value={projects.filter((p) => p.status === "delayed").length}                    color="#DC2626" bg="#FEF2F2" />
+          <StatPill label="On Hold"   value={projects.filter((p) => p.status === "on hold").length}                    color="#D97706" bg="#FFFBEB" />
+        </div>
+
+        {/* ── Toolbar ── */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {/* Search */}
+            <div style={{ position: "relative" }}>
+              <Search
+                size={13}
+                style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", pointerEvents: "none" }}
+              />
+              <input
+                className="input-base"
+                style={{ paddingLeft: 30, height: 36, width: 234, fontSize: 13 }}
+                placeholder="Search projects…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
             </div>
-            <select className="input-base h-9 w-44" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+
+            {/* Status filter */}
+            <select
+              className="input-base"
+              style={{ height: 36, width: 160, fontSize: 13 }}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
               <option value="all">All Status</option>
-              {PROJECT_STATUSES.map((s) => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+              {PROJECT_STATUSES.map((s) => (
+                <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+              ))}
             </select>
           </div>
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={15} /> New Project</button>
+
+          <button
+            className="btn btn-primary"
+            style={{ height: 36, fontSize: 13, gap: 6 }}
+            onClick={() => setShowModal(true)}
+          >
+            <Plus size={14} /> New Project
+          </button>
         </div>
 
-        {/* Summary */}
-        <div className="grid grid-cols-5 gap-4 mb-6">
-          {[
-            { label: "Total", value: projects.length, color: "#6366F1", bg: "#EEF2FF" },
-            { label: "Active", value: projects.filter((p) => ["active", "in progress"].includes(p.status)).length, color: "#10B981", bg: "#ECFDF5" },
-            { label: "Completed", value: projects.filter((p) => p.status === "completed").length, color: "#0EA5E9", bg: "#F0F9FF" },
-            { label: "Delayed", value: projects.filter((p) => p.status === "delayed").length, color: "#EF4444", bg: "#FEF2F2" },
-            { label: "On Hold", value: projects.filter((p) => p.status === "on hold").length, color: "#F59E0B", bg: "#FFFBEB" },
-          ].map((s) => (
-            <div key={s.label} className="card p-4">
-              <div className="w-8 h-8 rounded-xl mb-3 flex items-center justify-center" style={{ background: s.bg }}>
-                <FolderKanban size={14} style={{ color: s.color }} />
-              </div>
-              <div className="text-[22px] font-semibold tracking-tight" style={{ color: s.color }}>{s.value}</div>
-              <div className="text-[12px] mt-0.5 text-gray-500">{s.label}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Table */}
-        <div className="card-lg overflow-hidden">
+        {/* ── Table ── */}
+        <div className="card-lg" style={{ overflow: "hidden" }}>
           {filtered.length === 0 ? (
-            <EmptyState icon={FolderKanban} title="No projects found" description="Create your first project to get started." action={
-              <button className="btn btn-primary btn-sm" onClick={() => setShowModal(true)}><Plus size={13} />New Project</button>
-            } />
+            <EmptyState
+              icon={FolderKanban}
+              title="No projects found"
+              description="Create your first project to get started."
+              action={
+                <button className="btn btn-primary btn-sm" onClick={() => setShowModal(true)}>
+                  <Plus size={13} /> New Project
+                </button>
+              }
+            />
           ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Project</th>
-                  <th>Client</th>
-                  <th>Status</th>
-                  <th>Priority</th>
-                  <th>Health</th>
-                  <th>Progress</th>
-                  <th>Hours</th>
-                  <th>Due Date</th>
-                  <th>Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((project) => (
-                  <tr key={project.id}>
-                    <td>
-                      <Link href={`/projects/${project.id}`} className="block hover:underline">
-                        <div className="font-medium">{project.name}</div>
-                        {project.category && (
-                          <div className="text-[11.5px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>{project.category}</div>
-                        )}
-                      </Link>
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-1.5 text-[13px]">
-                        <Building2 size={12} style={{ color: "var(--text-tertiary)" }} />
-                        {(project.client as { name: string } | undefined)?.name ?? "—"}
-                      </div>
-                    </td>
-                    <td><StatusBadge status={project.status} /></td>
-                    <td><PriorityBadge priority={project.priority} /></td>
-                    <td><HealthBadge health={project.health_status} /></td>
-                    <td style={{ minWidth: 140 }}>
-                      <ProgressBar value={project.progress_percent} showLabel />
-                    </td>
-                    <td>
-                      <div className="text-[13px]">
-                        <span className="font-medium">{project.actual_hours}h</span>
-                        <span style={{ color: "var(--text-tertiary)" }}> / {project.estimated_hours}h</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-1.5 text-[12.5px]">
-                        <Clock size={12} style={{ color: "var(--text-tertiary)" }} />
-                        {project.due_date ? formatDate(project.due_date) : "—"}
-                      </div>
-                    </td>
-                    <td className="text-[12.5px]" style={{ color: "var(--text-tertiary)" }}>
-                      {timeAgo(project.updated_at)}
-                    </td>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ minWidth: 960 }}>
+                <colgroup>
+                  <col style={{ width: "20%" }} />
+                  <col style={{ width: "13%" }} />
+                  <col style={{ width: "11%" }} />
+                  <col style={{ width: "10%" }} />
+                  <col style={{ width: "9%" }} />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "9%" }} />
+                  <col style={{ width: "9%" }} />
+                  <col style={{ width: "8%" }} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Project</th>
+                    <th>Client</th>
+                    <th>Status</th>
+                    <th>Priority</th>
+                    <th>Health</th>
+                    <th>Progress</th>
+                    <th>Hours</th>
+                    <th>Due Date</th>
+                    <th>Updated</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {filtered.map((project) => (
+                    <tr key={project.id}>
+                      {/* Project name */}
+                      <td>
+                        <Link href={`/projects/${project.id}`} style={{ textDecoration: "none", display: "block" }}>
+                          <div style={{ fontWeight: 600, fontSize: 13.5, color: "var(--text-primary)", lineHeight: 1.3 }}>
+                            {project.name}
+                          </div>
+                          {project.category && (
+                            <div style={{ fontSize: 11.5, marginTop: 3, color: "var(--text-tertiary)" }}>
+                              {project.category}
+                            </div>
+                          )}
+                        </Link>
+                      </td>
+
+                      {/* Client */}
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 13, color: "var(--text-primary)", fontWeight: 500 }}>
+                          <Building2 size={11} style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />
+                          {(project.client as { name: string } | undefined)?.name ?? "—"}
+                        </div>
+                      </td>
+
+                      {/* Status */}
+                      <td><StatusBadge status={project.status} /></td>
+
+                      {/* Priority */}
+                      <td><PriorityBadge priority={project.priority} /></td>
+
+                      {/* Health */}
+                      <td><HealthBadge health={project.health_status} /></td>
+
+                      {/* Progress */}
+                      <td>
+                        <ProgressBar value={project.progress_percent} showLabel />
+                      </td>
+
+                      {/* Hours */}
+                      <td>
+                        <div style={{ fontSize: 13, lineHeight: 1.3 }}>
+                          <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{project.actual_hours}h</span>
+                          <span style={{ color: "var(--text-tertiary)" }}> / {project.estimated_hours}h</span>
+                        </div>
+                      </td>
+
+                      {/* Due Date */}
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, color: "var(--text-primary)", fontWeight: 500 }}>
+                          <Clock size={11} style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />
+                          {project.due_date ? formatDate(project.due_date) : "—"}
+                        </div>
+                      </td>
+
+                      {/* Updated */}
+                      <td style={{ fontSize: 12, color: "var(--text-tertiary)", fontWeight: 400 }}>
+                        {timeAgo(project.updated_at)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>
 
-      <Modal open={showModal} onClose={() => setShowModal(false)} title="New Project" size="lg">
+      <Modal open={showModal} onClose={() => setShowModal(false)} title="New Project" subtitle="Fill in the details to create a new project." size="lg">
         <ProjectForm onSave={() => { setShowModal(false); reload(); }} onClose={() => setShowModal(false)} />
       </Modal>
     </>

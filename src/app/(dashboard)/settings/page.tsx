@@ -1,22 +1,34 @@
 "use client";
 import { useState } from "react";
 import TopBar from "@/components/layout/TopBar";
-import { Settings, Palette, Building2, Clock, Tag, FileText, Bell, Shield } from "lucide-react";
+import { Settings, Palette, Building2, Clock, Tag, FileText, Bell, Shield, CheckCircle2, ChevronRight, Check } from "lucide-react";
 
-const SECTION = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <div className="card-lg p-6 mb-4">
-    <h3 className="text-[12px] font-semibold uppercase tracking-widest text-gray-400 mb-5 pb-3 border-b border-gray-100">{title}</h3>
-    {children}
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  fontSize: 12,
+  fontWeight: 600,
+  color: "var(--text-secondary)",
+  marginBottom: 6,
+  letterSpacing: "0.01em",
+};
+
+const SECTION = ({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) => (
+  <div className="card-lg" style={{ marginBottom: 24, overflow: "hidden", transition: "transform 0.2s, box-shadow 0.2s" }}>
+    <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-subtle)", background: "var(--surface-2)", display: "flex", alignItems: "center", gap: 10 }}>
+      <Icon size={14} style={{ color: "var(--text-tertiary)" }} />
+      <h3 style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-tertiary)" }}>{title}</h3>
+    </div>
+    <div style={{ padding: 24 }}>{children}</div>
   </div>
 );
 
 const Field = ({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) => (
-  <div className="flex items-center justify-between py-4 border-b border-gray-50 last:border-b-0">
-    <div className="max-w-sm">
-      <div className="text-[13.5px] font-medium text-gray-800">{label}</div>
-      {description && <div className="text-[12px] mt-0.5 text-gray-400">{description}</div>}
+  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 0", borderBottom: "1px solid var(--border-subtle)" }} className="last:border-0">
+    <div style={{ maxWidth: "60%" }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{label}</div>
+      {description && <div style={{ fontSize: 12.5, marginTop: 4, color: "var(--text-tertiary)", lineHeight: 1.5 }}>{description}</div>}
     </div>
-    <div className="ml-8">{children}</div>
+    <div style={{ marginLeft: 32 }}>{children}</div>
   </div>
 );
 
@@ -37,129 +49,130 @@ export default function SettingsPage() {
 
   return (
     <>
-      <TopBar title="Settings" subtitle="Configure your workspace" />
+      <TopBar title="Settings" subtitle="System configuration and workspace preferences" />
 
-      <div className="p-8 max-w-3xl animate-fade-in">
-        {/* Company */}
-        <SECTION title="Company & Branding">
-          <Field label="Company Name" description="Shown in reports and PDF exports.">
-            <input className="input-base w-52" value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
-          </Field>
-          <Field label="Report Title" description="Default title used in exported reports.">
-            <input className="input-base w-52" value={reportTitle} onChange={(e) => setReportTitle(e.target.value)} />
-          </Field>
-          <Field label="Accent Color" description="Primary brand color used throughout the UI.">
-            <div className="flex gap-2">
-              {ACCENT_OPTIONS.map((c) => (
-                <button
-                  key={c}
-                  className="w-7 h-7 rounded-full transition-transform hover:scale-110"
-                  style={{
-                    background: c,
-                    outline: accentColor === c ? `2px solid ${c}` : "none",
-                    outlineOffset: 2,
-                  }}
-                  onClick={() => setAccentColor(c)}
-                />
-              ))}
-            </div>
-          </Field>
-        </SECTION>
-
-        {/* Work Hours */}
-        <SECTION title="Work Hours">
-          <Field label="Work Start Time" description="Used for scheduler default view.">
-            <input type="time" className="input-base w-36" value={workStart} onChange={(e) => setWorkStart(e.target.value)} />
-          </Field>
-          <Field label="Work End Time" description="Used for scheduler default view.">
-            <input type="time" className="input-base w-36" value={workEnd} onChange={(e) => setWorkEnd(e.target.value)} />
-          </Field>
-          <Field label="Work Days" description="Select the days considered working days.">
-            <div className="flex gap-2">
-              {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d, i) => (
-                <button
-                  key={d}
-                  className={`w-9 h-9 rounded-lg text-[12px] font-medium transition-all ${i < 5 ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500"}`}
-                >
-                  {d}
-                </button>
-              ))}
-            </div>
-          </Field>
-        </SECTION>
-
-        {/* Categories */}
-        <SECTION title="Task Categories">
-          <div className="space-y-2">
-            {["Development","R&D","QA","Design","Maintenance","Client Update","Internal Review"].map((cat) => (
-              <div
-                key={cat}
-                className="flex items-center justify-between px-3 py-2 rounded-lg"
-                style={{ background: "var(--bg)" }}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Tag size={13} style={{ color: "var(--accent)" }} />
-                  <span className="text-[13px] font-medium">{cat}</span>
-                </div>
-                <button className="btn btn-ghost btn-sm text-[12px]" style={{ color: "var(--text-tertiary)" }}>Rename</button>
+      <div style={{ padding: "24px 28px 60px" }} className="animate-fade-up">
+        <div style={{ width: "100%" }}>
+          
+          {/* Branding */}
+          <SECTION title="Company & Branding" icon={Building2}>
+            <Field label="Company Name" description="Used as the sender identity in reports and PDF headers.">
+              <input className="input-base" style={{ width: 280, height: 38, background: "#fff" }} value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
+            </Field>
+            <Field label="Report Title" description="The default heading for all generated operations reports.">
+              <input className="input-base" style={{ width: 280, height: 38, background: "#fff" }} value={reportTitle} onChange={(e) => setReportTitle(e.target.value)} />
+            </Field>
+            <Field label="System Accent" description="Choose the primary color for buttons, progress bars, and highlights.">
+              <div style={{ display: "flex", gap: 12 }}>
+                {ACCENT_OPTIONS.map((c) => (
+                  <button
+                    key={c}
+                    style={{
+                      width: 32, height: 32, borderRadius: "50%", background: c, border: "none", cursor: "pointer", transition: "all 0.2s", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff",
+                      boxShadow: accentColor === c ? `0 0 0 2px #fff, 0 0 0 4px ${c}` : "none",
+                      transform: accentColor === c ? "scale(1.1)" : "scale(1)"
+                    }}
+                    onClick={() => setAccentColor(c)}
+                  >
+                    {accentColor === c && <Check size={16} strokeWidth={3} />}
+                  </button>
+                ))}
               </div>
-            ))}
+            </Field>
+          </SECTION>
+
+          {/* Operating Schedule */}
+          <SECTION title="Operating Schedule" icon={Clock}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 40, marginBottom: 20 }}>
+              <div>
+                <label style={labelStyle}>Standard Start Time</label>
+                <div style={{ position: "relative" }}>
+                  <Clock size={14} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", pointerEvents: "none" }} />
+                  <input type="time" className="input-base" style={{ height: 40, background: "#fff", paddingRight: 36, fontSize: 14 }} value={workStart} onChange={(e) => setWorkStart(e.target.value)} />
+                </div>
+              </div>
+              <div>
+                <label style={labelStyle}>Standard End Time</label>
+                <div style={{ position: "relative" }}>
+                  <Clock size={14} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", pointerEvents: "none" }} />
+                  <input type="time" className="input-base" style={{ height: 40, background: "#fff", paddingRight: 36, fontSize: 14 }} value={workEnd} onChange={(e) => setWorkEnd(e.target.value)} />
+                </div>
+              </div>
+            </div>
+            <Field label="Business Days" description="Define the standard work week for schedule calculations.">
+              <div style={{ display: "flex", gap: 8 }}>
+                {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d, i) => (
+                  <button
+                    key={d}
+                    style={{
+                      width: 44, height: 44, borderRadius: 12, border: i < 5 ? "none" : "1px solid var(--border)", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all 0.15s",
+                      background: i < 5 ? "var(--accent)" : "#fff",
+                      color: i < 5 ? "#fff" : "var(--text-tertiary)",
+                      boxShadow: i < 5 ? "0 4px 12px rgba(79, 70, 229, 0.2)" : "none"
+                    }}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          </SECTION>
+
+          {/* Taxonomy */}
+          <SECTION title="Taxonomy & Labels" icon={Tag}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              {["Development","R&D","QA","Design","Maintenance","Client Update","Internal Review","Urgent Fix"].map((cat) => (
+                <div key={cat} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderRadius: 12, background: "#fff", border: "1px solid var(--border-subtle)", transition: "all 0.2s" }} className="hover:border-indigo-200 hover:shadow-sm group">
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)" }} />
+                    <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-secondary)" }}>{cat}</span>
+                  </div>
+                  <button style={{ fontSize: 12, fontWeight: 700, color: "var(--text-tertiary)", border: "none", background: "transparent", cursor: "pointer", opacity: 0 }} className="group-hover:opacity-100 transition-opacity">
+                    Edit
+                  </button>
+                </div>
+              ))}
+            </div>
+          </SECTION>
+
+          {/* Notifications */}
+          <SECTION title="Automated Alerts" icon={Bell}>
+            <Field label="Overdue Task Alerts" description="Notify admins and assignees when a task misses its deadline.">
+              <label style={{ position: "relative", display: "inline-flex", alignItems: "center", cursor: "pointer" }}>
+                <input type="checkbox" defaultChecked style={{ position: "absolute", opacity: 0, width: 0, height: 0 }} />
+                <div style={{ width: 44, height: 24, borderRadius: 24, background: "var(--accent)", transition: "all 0.2s", position: "relative", boxShadow: "0 2px 8px rgba(79, 70, 229, 0.2)" }}>
+                  <div style={{ position: "absolute", top: 3, left: 23, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "all 0.2s" }} />
+                </div>
+              </label>
+            </Field>
+            <Field label="Interaction Reminders" description="Alert if a high-priority client hasn't been updated in 48 hours.">
+              <label style={{ position: "relative", display: "inline-flex", alignItems: "center", cursor: "pointer" }}>
+                <input type="checkbox" defaultChecked style={{ position: "absolute", opacity: 0, width: 0, height: 0 }} />
+                <div style={{ width: 44, height: 24, borderRadius: 24, background: "var(--accent)", transition: "all 0.2s", position: "relative", boxShadow: "0 2px 8px rgba(79, 70, 229, 0.2)" }}>
+                  <div style={{ position: "absolute", top: 3, left: 23, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "all 0.2s" }} />
+                </div>
+              </label>
+            </Field>
+          </SECTION>
+
+          {/* Security */}
+          <SECTION title="Security & Access" icon={Shield}>
+            <Field label="Administrator Email" description="The primary account for system-level configurations.">
+              <input className="input-base" style={{ width: 320, height: 40, background: "#fff" }} defaultValue="admin@integritims.com" type="email" />
+            </Field>
+            <Field label="Account Protection" description="Manage passwords and two-factor authentication.">
+              <button className="btn btn-secondary" style={{ height: 40, fontSize: 13.5, gap: 8, px: 24 }}>
+                <Shield size={14} /> Update Security Settings
+              </button>
+            </Field>
+          </SECTION>
+
+          {/* Save Button */}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+            <button className="btn btn-primary" style={{ height: 46, padding: "0 40px", fontSize: 15, fontWeight: 700, minWidth: 240, gap: 10, boxShadow: "0 12px 30px rgba(79, 70, 229, 0.3)" }} onClick={handleSave}>
+              {saved ? <><CheckCircle2 size={18} /> Settings Saved</> : "Save Preferences"}
+            </button>
           </div>
-        </SECTION>
-
-        {/* PDF Export */}
-        <SECTION title="PDF Export Preferences">
-          <Field label="Include Company Logo" description="Add your company logo to PDF exports.">
-            <button className="btn btn-secondary btn-sm">Upload Logo</button>
-          </Field>
-          <Field label="Report Footer" description="Custom text shown at the bottom of reports.">
-            <input className="input-base w-64" placeholder="e.g. Confidential · IntegritiMS" />
-          </Field>
-          <Field label="Page Size" description="Paper size for PDF exports.">
-            <select className="input-base w-32">
-              <option>A4</option>
-              <option>Letter</option>
-              <option>A3</option>
-            </select>
-          </Field>
-        </SECTION>
-
-        {/* Notifications */}
-        <SECTION title="Notifications">
-          <Field label="Overdue Task Alerts" description="Get alerted when tasks become overdue.">
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" defaultChecked className="sr-only peer" />
-              <div className="w-10 h-5 rounded-full peer-checked:bg-indigo-600 bg-slate-300 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:w-4 after:h-4 after:transition-transform peer-checked:after:translate-x-5" />
-            </label>
-          </Field>
-          <Field label="Client Update Reminders" description="Remind when clients are waiting for an update.">
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" defaultChecked className="sr-only peer" />
-              <div className="w-10 h-5 rounded-full peer-checked:bg-indigo-600 bg-slate-300 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:w-4 after:h-4 after:transition-transform peer-checked:after:translate-x-5" />
-            </label>
-          </Field>
-          <Field label="Deadline Approaching" description="Alert 3 days before a project deadline.">
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" defaultChecked className="sr-only peer" />
-              <div className="w-10 h-5 rounded-full peer-checked:bg-indigo-600 bg-slate-300 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:w-4 after:h-4 after:transition-transform peer-checked:after:translate-x-5" />
-            </label>
-          </Field>
-        </SECTION>
-
-        {/* Admin */}
-        <SECTION title="Admin Account">
-          <Field label="Admin Email" description="Email used to sign in.">
-            <input className="input-base w-64" defaultValue="admin@integritims.com" type="email" />
-          </Field>
-          <Field label="Change Password" description="">
-            <button className="btn btn-secondary btn-sm"><Shield size={13} /> Change Password</button>
-          </Field>
-        </SECTION>
-
-        <div className="flex justify-end pt-2">
-          <button className="btn btn-primary" onClick={handleSave}>
-            {saved ? "✓ Saved!" : "Save Settings"}
-          </button>
         </div>
       </div>
     </>

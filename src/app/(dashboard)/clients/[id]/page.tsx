@@ -58,163 +58,316 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
 
   const TABS = ["projects", "activity", "notes"] as const;
 
+  /* ── avatar colour seeded from name ── */
+  const avatarBg = "linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)";
+
   return (
     <>
       <TopBar title={client.name} subtitle={client.company_name} />
 
-      <div className="p-8 animate-fade-in">
-        {/* Back */}
-        <Link href="/clients" className="btn btn-ghost btn-sm mb-6 -ml-2">
-          <ArrowLeft size={14} /> Back to Clients
+      <div style={{ padding: "24px 28px 36px" }} className="animate-fade-in">
+
+        {/* ── Back link ── */}
+        <Link
+          href="/clients"
+          className="btn btn-ghost btn-sm"
+          style={{ marginBottom: 20, marginLeft: -4, display: "inline-flex" }}
+        >
+          <ArrowLeft size={13} /> Back to Clients
         </Link>
 
-        {/* Client Header Card */}
-        <div className="card-lg p-6 mb-6">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-start gap-5">
+        {/* ══════════ Client Header Card ══════════ */}
+        <div
+          className="card-lg"
+          style={{ padding: "24px 26px", marginBottom: 18 }}
+        >
+          {/* Top row: avatar + name + actions */}
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 18 }}>
+              {/* Avatar */}
               <div
-                className="w-14 h-14 rounded-2xl flex items-center justify-center text-white font-bold text-xl"
-                style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}
+                style={{
+                  width: 56, height: 56, borderRadius: 14,
+                  background: avatarBg,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "#fff", fontWeight: 800, fontSize: 22,
+                  flexShrink: 0,
+                  boxShadow: "0 4px 14px rgba(99,102,241,0.30)",
+                }}
               >
-                {client.name.charAt(0)}
+                {client.name.charAt(0).toUpperCase()}
               </div>
+
+              {/* Name block */}
               <div>
-                <h2 className="text-[22px] font-semibold tracking-tight text-gray-900">{client.name}</h2>
-                <div className="flex items-center gap-2 mt-1">
-                  <Building2 size={13} style={{ color: "var(--text-tertiary)" }} />
-                  <span className="text-[13.5px]" style={{ color: "var(--text-secondary)" }}>{client.company_name}</span>
+                <h2
+                  style={{
+                    fontSize: 22, fontWeight: 700,
+                    color: "var(--text-primary)",
+                    letterSpacing: "-0.5px",
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {client.name}
+                </h2>
+                <div
+                  style={{
+                    display: "flex", alignItems: "center", gap: 5,
+                    marginTop: 5, color: "var(--text-secondary)", fontSize: 13,
+                  }}
+                >
+                  <Building2 size={12} style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />
+                  {client.company_name}
                 </div>
-                <div className="flex items-center gap-3 mt-3">
+
+                {/* Badges */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
                   <StatusBadge status={client.status} />
                   <PriorityBadge priority={client.priority} />
                   {client.waiting_for_update && (
-                    <span className="badge bg-amber-50 text-amber-700">
-                      <Bell size={11} /> Waiting for update
+                    <span
+                      className="badge"
+                      style={{
+                        background: "#FFFBEB", color: "#B45309",
+                        border: "1px solid #FDE68A", fontSize: 11.5, fontWeight: 600, gap: 4,
+                      }}
+                    >
+                      <Bell size={10} /> Waiting for update
                     </span>
                   )}
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button className="btn btn-secondary btn-sm"><Edit3 size={13} /> Edit</button>
-              <button className="btn btn-danger btn-sm" onClick={() => setShowDelete(true)}><Trash2 size={13} /></button>
+
+            {/* Action buttons */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                className="btn btn-secondary btn-sm"
+                style={{ gap: 6, height: 34, fontSize: 12.5 }}
+              >
+                <Edit3 size={12} /> Edit
+              </button>
+              <button
+                className="btn btn-danger btn-sm"
+                style={{ width: 34, height: 34, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+                onClick={() => setShowDelete(true)}
+                title="Delete client"
+              >
+                <Trash2 size={13} />
+              </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-6 mt-6 pt-6 border-t" style={{ borderColor: "var(--border)" }}>
-            <div className="flex items-center gap-2">
-              <User size={14} style={{ color: "var(--text-tertiary)" }} />
-              <div>
-                <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Contact</div>
-                <div className="text-[13px] font-medium">{client.contact_person}</div>
+          {/* ── Contact info strip ── */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: 0,
+              marginTop: 22,
+              paddingTop: 20,
+              borderTop: "1px solid var(--border-subtle)",
+            }}
+          >
+            {[
+              { icon: User, label: "Contact", value: client.contact_person },
+              { icon: Mail, label: "Email", value: client.email },
+              { icon: Phone, label: "Phone", value: client.phone || "—" },
+              { icon: Calendar, label: "Next Deadline", value: client.next_deadline ? formatDate(client.next_deadline) : "—" },
+            ].map(({ icon: Icon, label, value }, i, arr) => (
+              <div
+                key={label}
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 10,
+                  paddingLeft: i === 0 ? 0 : 20,
+                  borderLeft: i === 0 ? "none" : "1px solid var(--border-subtle)",
+                }}
+              >
+                <div
+                  style={{
+                    width: 32, height: 32, borderRadius: 8,
+                    background: "var(--surface-2)",
+                    border: "1px solid var(--border)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Icon size={13} style={{ color: "var(--text-tertiary)" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", fontWeight: 600, letterSpacing: "0.03em", textTransform: "uppercase" }}>
+                    {label}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginTop: 3, lineHeight: 1.2 }}>
+                    {value}
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Mail size={14} style={{ color: "var(--text-tertiary)" }} />
-              <div>
-                <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Email</div>
-                <div className="text-[13px] font-medium">{client.email}</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Phone size={14} style={{ color: "var(--text-tertiary)" }} />
-              <div>
-                <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Phone</div>
-                <div className="text-[13px] font-medium">{client.phone || "—"}</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Calendar size={14} style={{ color: "var(--text-tertiary)" }} />
-              <div>
-                <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Next Deadline</div>
-                <div className="text-[13px] font-medium">{client.next_deadline ? formatDate(client.next_deadline) : "—"}</div>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
 
-        {/* Summary Panels */}
-        <div className="grid grid-cols-6 gap-4 mb-6">
+        {/* ══════════ Summary stat row ══════════ */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(6, 1fr)",
+            gap: 12,
+            marginBottom: 18,
+          }}
+        >
           {[
-            { label: "Total Projects", value: totalProjects, icon: FolderKanban, color: "#6366F1", bg: "#EEF2FF" },
-            { label: "Active", value: activeProjects, icon: Activity, color: "#10B981", bg: "#ECFDF5" },
-            { label: "Completed", value: completedProjects, icon: CheckSquare, color: "#0EA5E9", bg: "#F0F9FF" },
-            { label: "Delayed", value: delayedProjects, icon: AlertCircle, color: "#EF4444", bg: "#FEF2F2" },
-            { label: "Overdue Tasks", value: client.overdue_tasks ?? 0, icon: Clock, color: "#EF4444", bg: "#FEF2F2" },
-            { label: "Created", value: formatDate(client.created_at, "MMM yyyy"), icon: Calendar, color: "#8B5CF6", bg: "#F5F3FF" },
+            { label: "Total Projects", value: totalProjects,                   icon: FolderKanban, color: "#4F46E5", bg: "#EEF2FF" },
+            { label: "Active",         value: activeProjects,                  icon: Activity,     color: "#059669", bg: "#ECFDF5" },
+            { label: "Completed",      value: completedProjects,               icon: CheckSquare,  color: "#0EA5E9", bg: "#F0F9FF" },
+            { label: "Delayed",        value: delayedProjects,                 icon: AlertCircle,  color: "#DC2626", bg: "#FEF2F2" },
+            { label: "Overdue Tasks",  value: client.overdue_tasks ?? 0,       icon: Clock,        color: "#DC2626", bg: "#FEF2F2" },
+            { label: "Created",        value: formatDate(client.created_at, "MMM yyyy"), icon: Calendar, color: "#7C3AED", bg: "#F5F3FF" },
           ].map((s) => (
-            <div key={s.label} className="card p-4">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center mb-2.5" style={{ background: s.bg }}>
-                <s.icon size={14} style={{ color: s.color }} />
+            <div
+              key={s.label}
+              className="card"
+              style={{ padding: "14px 16px" }}
+            >
+              <div
+                style={{
+                  width: 30, height: 30, borderRadius: 8,
+                  background: s.bg,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  marginBottom: 10,
+                }}
+              >
+                <s.icon size={13} style={{ color: s.color }} />
               </div>
-              <div className="text-[20px] font-semibold tracking-tight" style={{ color: s.color }}>{s.value}</div>
-              <div className="text-[11.5px] mt-0.5 text-gray-500">{s.label}</div>
+              <div
+                style={{
+                  fontSize: 22, fontWeight: 700, letterSpacing: "-0.5px",
+                  color: s.color, lineHeight: 1,
+                }}
+              >
+                {s.value}
+              </div>
+              <div
+                style={{
+                  fontSize: 11.5, marginTop: 4,
+                  color: "var(--text-secondary)", fontWeight: 500,
+                }}
+              >
+                {s.label}
+              </div>
             </div>
           ))}
         </div>
 
-        {/* Tabs */}
-        <div className="card-lg overflow-hidden">
+        {/* ══════════ Tabs Card ══════════ */}
+        <div className="card-lg" style={{ overflow: "hidden" }}>
+          {/* Tab bar */}
           <div
-            className="flex border-b px-6"
-            style={{ borderColor: "var(--border)" }}
+            style={{
+              display: "flex",
+              borderBottom: "1px solid var(--border)",
+              padding: "0 24px",
+              background: "var(--surface)",
+            }}
           >
             {TABS.map((tab) => (
               <button
                 key={tab}
-                className="px-4 py-3.5 text-[13px] font-medium border-b-2 transition-colors capitalize"
-                style={{
-                  borderColor: activeTab === tab ? "var(--accent)" : "transparent",
-                  color: activeTab === tab ? "var(--accent)" : "var(--text-secondary)",
-                }}
                 onClick={() => setActiveTab(tab)}
+                style={{
+                  padding: "13px 16px",
+                  fontSize: 13,
+                  fontWeight: activeTab === tab ? 600 : 500,
+                  color: activeTab === tab ? "var(--accent)" : "var(--text-secondary)",
+                  borderBottom: `2px solid ${activeTab === tab ? "var(--accent)" : "transparent"}`,
+                  background: "none",
+                  border: "none",
+                  borderBottom: `2px solid ${activeTab === tab ? "var(--accent)" : "transparent"}`,
+                  cursor: "pointer",
+                  transition: "color 0.15s",
+                  textTransform: "capitalize",
+                  whiteSpace: "nowrap",
+                } as React.CSSProperties}
               >
                 {tab}
               </button>
             ))}
           </div>
 
-          <div className="p-6">
-            {/* Projects Tab */}
+          {/* Tab body */}
+          <div style={{ padding: "22px 24px" }}>
+
+            {/* ── Projects ── */}
             {activeTab === "projects" && (
               <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="font-semibold">Projects</div>
-                  <Link href={`/projects?client=${id}`} className="btn btn-secondary btn-sm">
-                    <Plus size={13} /> New Project
+                <div
+                  style={{
+                    display: "flex", alignItems: "center",
+                    justifyContent: "space-between", marginBottom: 16,
+                  }}
+                >
+                  <div
+                    style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}
+                  >
+                    Projects
+                  </div>
+                  <Link href={`/projects?client=${id}`} className="btn btn-secondary btn-sm" style={{ height: 32, fontSize: 12.5, gap: 5 }}>
+                    <Plus size={12} /> New Project
                   </Link>
                 </div>
+
                 {projects.length === 0 ? (
-                  <div className="text-[13px]" style={{ color: "var(--text-tertiary)" }}>No projects yet.</div>
+                  <div style={{ fontSize: 13, color: "var(--text-tertiary)", padding: "24px 0", textAlign: "center" }}>
+                    No projects yet.
+                  </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {(projects as Record<string, unknown>[]).map((p) => (
                       <Link
                         key={p.id as string}
                         href={`/projects/${p.id}`}
-                        className="block p-4 rounded-xl border hover:border-indigo-200 transition-colors"
-                        style={{ borderColor: "var(--border)" }}
+                        style={{
+                          display: "block",
+                          padding: "16px 18px",
+                          borderRadius: 12,
+                          border: "1px solid var(--border)",
+                          background: "#fff",
+                          textDecoration: "none",
+                          transition: "border-color 0.15s, box-shadow 0.15s",
+                        }}
+                        onMouseEnter={(e) => {
+                          (e.currentTarget as HTMLElement).style.borderColor = "#C7D2FE";
+                          (e.currentTarget as HTMLElement).style.boxShadow = "0 2px 8px rgba(79,70,229,0.08)";
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                          (e.currentTarget as HTMLElement).style.boxShadow = "none";
+                        }}
                       >
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-[14px]">{p.name as string}</div>
-                            <div className="text-[12.5px] mt-0.5" style={{ color: "var(--text-secondary)" }}>
-                              {p.description as string || "No description"}
+                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)", lineHeight: 1.3 }}>
+                              {p.name as string}
                             </div>
-                            <div className="flex items-center gap-3 mt-2.5">
+                            <div style={{ fontSize: 12.5, marginTop: 3, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+                              {(p.description as string) || "No description"}
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
                               <StatusBadge status={p.status as string} />
                               <PriorityBadge priority={p.priority as string} />
                               <HealthBadge health={p.health_status as string} />
                             </div>
                           </div>
-                          <div className="text-right shrink-0">
-                            <div className="text-[13px] font-bold">{p.progress_percent as number}%</div>
-                            <div className="text-[11.5px]" style={{ color: "var(--text-tertiary)" }}>
+                          <div style={{ textAlign: "right", flexShrink: 0 }}>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>
+                              {p.progress_percent as number}%
+                            </div>
+                            <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginTop: 2 }}>
                               Due {p.due_date ? formatDate(p.due_date as string) : "—"}
                             </div>
                           </div>
                         </div>
-                        <div className="mt-3">
+                        <div style={{ marginTop: 12 }}>
                           <ProgressBar value={p.progress_percent as number} showLabel={false} />
                         </div>
                       </Link>
@@ -224,23 +377,31 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
               </div>
             )}
 
-            {/* Activity Tab */}
+            {/* ── Activity ── */}
             {activeTab === "activity" && (
-              <div className="space-y-4">
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {activity.length === 0 ? (
-                  <div className="text-[13px]" style={{ color: "var(--text-tertiary)" }}>No activity yet.</div>
+                  <div style={{ fontSize: 13, color: "var(--text-tertiary)", padding: "24px 0", textAlign: "center" }}>
+                    No activity yet.
+                  </div>
                 ) : (
                   activity.map((log, i) => (
-                    <div key={i} className="flex gap-4">
+                    <div key={i} style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
                       <div
-                        className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-                        style={{ background: "var(--accent-light)" }}
+                        style={{
+                          width: 32, height: 32, borderRadius: "50%",
+                          background: "var(--accent-light)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          flexShrink: 0,
+                        }}
                       >
-                        <Activity size={14} style={{ color: "var(--accent)" }} />
+                        <Activity size={13} style={{ color: "var(--accent)" }} />
                       </div>
-                      <div>
-                        <div className="text-[13.5px]">{log.description as string}</div>
-                        <div className="text-[12px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                      <div style={{ paddingTop: 6 }}>
+                        <div style={{ fontSize: 13.5, color: "var(--text-primary)", lineHeight: 1.4 }}>
+                          {log.description as string}
+                        </div>
+                        <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 3 }}>
                           {timeAgo(log.created_at as string)}
                         </div>
                       </div>
@@ -250,32 +411,56 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
               </div>
             )}
 
-            {/* Notes Tab */}
+            {/* ── Notes ── */}
             {activeTab === "notes" && (
-              <div className="space-y-4">
-                <div className="flex gap-3">
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {/* Compose */}
+                <div
+                  style={{
+                    display: "flex", gap: 10, alignItems: "flex-end",
+                    padding: "14px 16px",
+                    borderRadius: 10,
+                    background: "var(--surface-2)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
                   <textarea
-                    className="input-base flex-1"
+                    className="input-base"
                     rows={2}
                     placeholder="Add an internal note…"
                     value={noteText}
                     onChange={(e) => setNoteText(e.target.value)}
+                    style={{ flex: 1, resize: "none", background: "#fff" }}
                   />
-                  <button className="btn btn-primary self-end" onClick={addNote} disabled={savingNote || !noteText.trim()}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={addNote}
+                    disabled={savingNote || !noteText.trim()}
+                    style={{ height: 36, fontSize: 13, flexShrink: 0 }}
+                  >
                     {savingNote ? "…" : "Add"}
                   </button>
                 </div>
+
                 {notes.length === 0 ? (
-                  <div className="text-[13px]" style={{ color: "var(--text-tertiary)" }}>No notes yet.</div>
+                  <div style={{ fontSize: 13, color: "var(--text-tertiary)", padding: "16px 0", textAlign: "center" }}>
+                    No notes yet.
+                  </div>
                 ) : (
                   notes.map((note) => (
                     <div
                       key={note.id}
-                      className="p-4 rounded-xl"
-                      style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
+                      style={{
+                        padding: "14px 16px",
+                        borderRadius: 10,
+                        background: "#FFFBEB",
+                        border: "1px solid #FEF3C7",
+                      }}
                     >
-                      <p className="text-[13.5px]">{note.content}</p>
-                      <div className="text-[11.5px] mt-2" style={{ color: "var(--text-tertiary)" }}>
+                      <p style={{ fontSize: 13.5, color: "var(--text-primary)", lineHeight: 1.5 }}>
+                        {note.content}
+                      </p>
+                      <div style={{ fontSize: 11.5, marginTop: 8, color: "#B45309", fontWeight: 500 }}>
                         {timeAgo(note.created_at)}
                       </div>
                     </div>
@@ -287,7 +472,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         </div>
       </div>
 
-      {/* Delete Confirm */}
+      {/* ── Delete Confirm Modal ── */}
       <Modal
         open={showDelete}
         onClose={() => setShowDelete(false)}
@@ -296,13 +481,18 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         size="sm"
         footer={
           <>
-            <button className="btn btn-secondary" onClick={() => setShowDelete(false)}>Cancel</button>
-            <button className="btn btn-danger" onClick={handleDelete}>Delete</button>
+            <button className="btn btn-secondary" style={{ height: 36, fontSize: 13 }} onClick={() => setShowDelete(false)}>
+              Cancel
+            </button>
+            <button className="btn btn-danger" style={{ height: 36, fontSize: 13 }} onClick={handleDelete}>
+              Delete Client
+            </button>
           </>
         }
       >
-        <p className="text-[13.5px]" style={{ color: "var(--text-secondary)" }}>
-          Are you sure you want to delete <strong>{client.name}</strong>? This action cannot be undone.
+        <p style={{ fontSize: 13.5, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+          Are you sure you want to delete <strong style={{ color: "var(--text-primary)" }}>{client.name}</strong>?{" "}
+          This action cannot be undone and all projects, tasks, and notes linked to this client will be permanently removed.
         </p>
       </Modal>
     </>

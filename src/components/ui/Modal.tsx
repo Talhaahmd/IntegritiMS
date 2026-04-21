@@ -12,11 +12,11 @@ interface ModalProps {
   footer?: React.ReactNode;
 }
 
-const SIZE_MAP = {
-  sm: "max-w-md",
-  md: "max-w-lg",
-  lg: "max-w-2xl",
-  xl: "max-w-3xl",
+const SIZE_MAP: Record<string, number> = {
+  sm: 440,
+  md: 540,
+  lg: 680,
+  xl: 820,
 };
 
 export default function Modal({ open, onClose, title, subtitle, children, size = "md", footer }: ModalProps) {
@@ -28,33 +28,121 @@ export default function Modal({ open, onClose, title, subtitle, children, size =
   if (!open) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 50,
+        background: "rgba(15, 23, 42, 0.40)",
+        backdropFilter: "blur(4px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+        animation: "fadeIn 0.15s ease-out",
+      }}
+    >
       <div
-        className={`modal-panel w-full ${SIZE_MAP[size]}`}
         onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%",
+          maxWidth: SIZE_MAP[size],
+          background: "#fff",
+          borderRadius: 16,
+          boxShadow: "0 24px 64px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.06)",
+          border: "1px solid var(--border)",
+          maxHeight: "90vh",
+          animation: "fadeUp 0.2s ease-out",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
       >
-        {/* Header */}
-        <div className="flex items-start justify-between px-6 pt-6 pb-5 border-b border-gray-100">
+        {/* ── Header ── */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            padding: "22px 24px 18px",
+            borderBottom: "1px solid var(--border-subtle)",
+            gap: 12,
+          }}
+        >
           <div>
-            <h2 className="text-[16px] font-semibold text-gray-900 tracking-tight">{title}</h2>
+            <h2
+              style={{
+                fontSize: 16,
+                fontWeight: 700,
+                color: "var(--text-primary)",
+                letterSpacing: "-0.3px",
+                lineHeight: 1.2,
+              }}
+            >
+              {title}
+            </h2>
             {subtitle && (
-              <p className="text-[12.5px] text-gray-400 mt-0.5">{subtitle}</p>
+              <p
+                style={{
+                  fontSize: 12.5,
+                  color: "var(--text-tertiary)",
+                  marginTop: 4,
+                  lineHeight: 1.4,
+                }}
+              >
+                {subtitle}
+              </p>
             )}
           </div>
+
+          {/* Close button */}
           <button
-            className="ml-4 w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
             onClick={onClose}
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              background: "var(--surface-2)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              color: "var(--text-tertiary)",
+              flexShrink: 0,
+              transition: "background 0.12s, color 0.12s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#F3F4F6";
+              e.currentTarget.style.color = "var(--text-primary)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "var(--surface-2)";
+              e.currentTarget.style.color = "var(--text-tertiary)";
+            }}
           >
-            <X size={14} />
+            <X size={13} />
           </button>
         </div>
 
-        {/* Body */}
-        <div className="px-6 py-6">{children}</div>
+        {/* ── Body ── */}
+        <div style={{ padding: "22px 24px", flex: 1, overflowY: "auto", overflowX: "hidden" }}>{children}</div>
 
-        {/* Footer */}
+        {/* ── Footer (optional) ── */}
         {footer && (
-          <div className="flex items-center justify-end gap-2.5 px-6 py-4 border-t border-gray-100 bg-gray-50/50 rounded-b-xl">
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              gap: 10,
+              padding: "14px 24px",
+              borderTop: "1px solid var(--border-subtle)",
+              background: "var(--surface-2)",
+              borderRadius: "0 0 16px 16px",
+            }}
+          >
             {footer}
           </div>
         )}

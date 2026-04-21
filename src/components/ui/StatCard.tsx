@@ -27,7 +27,7 @@ export default function StatCard({
   const changeColors = {
     positive: "text-emerald-600 bg-emerald-50",
     negative: "text-red-500 bg-red-50",
-    neutral:  "text-gray-400 bg-gray-50",
+    neutral: "text-gray-400 bg-gray-50",
   };
 
   return (

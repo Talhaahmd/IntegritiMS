@@ -11,21 +11,25 @@ import {
   CheckSquare,
   BarChart3,
   Settings,
-  Zap,
   ChevronLeft,
   ChevronRight,
   Sparkles,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
-const NAV: { href: string; icon: React.ElementType; label: string; highlight?: boolean }[] = [
-  { href: "/",            icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/clients",     icon: Users,           label: "Clients" },
-  { href: "/projects",    icon: FolderKanban,    label: "Projects" },
-  { href: "/team",        icon: UserCog,         label: "Team" },
-  { href: "/scheduler",   icon: CalendarDays,    label: "Scheduler" },
-  { href: "/tasks",       icon: CheckSquare,     label: "Tasks" },
-  { href: "/reports",     icon: BarChart3,       label: "Reports" },
-  { href: "/ai-manager",  icon: Sparkles,        label: "AI Manager", highlight: true },
+const MAIN_NAV: { href: string; icon: React.ElementType; label: string; highlight?: boolean }[] = [
+  { href: "/", icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/clients", icon: Users, label: "Clients" },
+  { href: "/projects", icon: FolderKanban, label: "Projects" },
+  { href: "/team", icon: UserCog, label: "Team" },
+  { href: "/scheduler", icon: CalendarDays, label: "Scheduler" },
+  { href: "/tasks", icon: CheckSquare, label: "Tasks" },
+  { href: "/reports", icon: BarChart3, label: "Reports" },
+  { href: "/ai-manager", icon: Sparkles, label: "AI Manager", highlight: true },
+];
+
+const SETTINGS_NAV: { href: string; icon: React.ElementType; label: string }[] = [
+  { href: "/settings", icon: Settings, label: "Settings" },
 ];
 
 interface SidebarProps {
@@ -42,120 +46,320 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   }
 
   return (
-    <aside
-      className="flex flex-col fixed left-0 top-0 bottom-0 z-30 bg-white border-r border-gray-100 transition-all duration-300"
-      style={{ width: collapsed ? 60 : 240 }}
+    <motion.aside
+      initial={false}
+      animate={{
+        width: collapsed ? 64 : 248,
+      }}
+      transition={{
+        type: "spring",
+        stiffness: 300,
+        damping: 30,
+        mass: 0.8
+      }}
+      className="flex flex-col fixed left-0 top-0 bottom-0 z-30"
+      style={{
+        background: "#FAFAFA",
+        borderRight: "1px solid #EBEBEB",
+      }}
     >
-      {/* Brand */}
-      <div className="flex items-center h-[60px] border-b border-gray-100 px-3.5 shrink-0 overflow-hidden">
-        <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0">
-          <Zap size={13} color="white" strokeWidth={2.5} />
-        </div>
-        {!collapsed && (
-          <div className="ml-2.5 overflow-hidden">
-            <div className="text-[13.5px] font-semibold text-gray-900 tracking-tight leading-none whitespace-nowrap">
-              IntegritiMS
-            </div>
-            <div className="text-[10.5px] text-gray-400 mt-0.5 leading-none">Operations Hub</div>
-          </div>
-        )}
-        {/* Toggle button */}
+      {/* ── Brand ── */}
+      <div
+        className="flex items-center shrink-0 overflow-hidden"
+        style={{ height: 64, padding: collapsed ? "0 18px" : "0 20px", gap: 12 }}
+      >
+        <button
+          onClick={onToggle}
+          className="flex items-center justify-center shrink-0 rounded-xl hover:scale-105 active:scale-95 transition-all outline-none"
+          style={{ width: 34, height: 34, background: "transparent", border: "none", cursor: "pointer", padding: 0 }}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          <img src="/logo.webp" alt="Logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+        </button>
+
+        <AnimatePresence mode="wait">
+          {!collapsed && (
+            <motion.div
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden flex-1"
+            >
+              <div
+                style={{ fontSize: 14.5, fontWeight: 700, color: "#111827", letterSpacing: "-0.3px", lineHeight: 1 }}
+              >
+                Integriti
+              </div>
+              <div
+                style={{ fontSize: 11, fontWeight: 400, color: "#9CA3AF", marginTop: 6, lineHeight: 1 }}
+              >
+                Operations Hub
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Toggle */}
         <button
           onClick={onToggle}
           className={cn(
-            "ml-auto flex items-center justify-center w-6 h-6 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors shrink-0",
-            collapsed && "mx-auto ml-auto"
+            "flex items-center justify-center rounded-lg transition-colors",
+            collapsed ? "mx-auto mt-0" : "ml-auto"
           )}
+          style={{
+            width: 26,
+            height: 26,
+            color: "#9CA3AF",
+            marginLeft: collapsed ? undefined : "auto",
+          }}
+          onMouseEnter={e => (e.currentTarget.style.background = "#EFEFEF")}
+          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
         >
           {collapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
         </button>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
-        {!collapsed && (
-          <p className="px-2 mb-2 text-[10px] font-semibold tracking-widest text-gray-400 uppercase">
-            Menu
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden" style={{ padding: collapsed ? "12px 10px" : "16px 12px 12px" }}>
+        {/* {!collapsed && (
+          <p
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: "#B0B7C3",
+              padding: "10px 8px 6px",
+            }}
+          >
+            Main Menu
           </p>
-        )}
-        {NAV.map(({ href, icon: Icon, label, highlight }) => {
-          const active = isActive(href);
-          return (
-            <Link
-              key={href}
-              href={href}
-              title={collapsed ? label : undefined}
-              className={cn(
-                "flex items-center gap-2.5 rounded-lg text-[13px] font-medium transition-all duration-150 group overflow-hidden",
-                collapsed ? "px-0 py-2 justify-center" : "px-3 py-2",
-                active
-                  ? "bg-indigo-50 text-indigo-700"
-                  : highlight && !active
-                  ? "text-indigo-600 hover:bg-indigo-50"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-              )}
-            >
-              <Icon
-                size={15}
-                strokeWidth={active ? 2.2 : 1.8}
-                className={cn(
-                  "shrink-0",
-                  active ? "text-indigo-600"
-                  : highlight ? "text-indigo-500"
-                  : "text-gray-400 group-hover:text-gray-600"
+        )} */}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {MAIN_NAV.map(({ href, icon: Icon, label, highlight }) => {
+            const active = isActive(href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                title={collapsed ? label : undefined}
+                className="flex items-center rounded-lg transition-all duration-150 group overflow-hidden"
+                style={{
+                  gap: collapsed ? 0 : 10,
+                  padding: collapsed ? "9px 0" : "9px 10px",
+                  justifyContent: collapsed ? "center" : undefined,
+                  background: active ? "#EEF2FF" : "transparent",
+                  color: active
+                    ? "#4F46E5"
+                    : highlight
+                      ? "#4F46E5"
+                      : "#4B5563",
+                  fontWeight: active ? 600 : 500,
+                  fontSize: 13.5,
+                  textDecoration: "none",
+                }}
+                onMouseEnter={e => {
+                  if (!active) e.currentTarget.style.background = "#F0F0F0";
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = active ? "#EEF2FF" : "transparent";
+                }}
+              >
+                <Icon
+                  size={16}
+                  strokeWidth={active ? 2.2 : 1.8}
+                  style={{
+                    flexShrink: 0,
+                    color: active
+                      ? "#4F46E5"
+                      : highlight
+                        ? "#818CF8"
+                        : "#9CA3AF",
+                    transition: "color 0.15s",
+                  }}
+                />
+                <AnimatePresence>
+                  {!collapsed && (
+                    <motion.span
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: "auto" }}
+                      exit={{ opacity: 0, width: 0 }}
+                      transition={{ duration: 0.2 }}
+                      style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden" }}
+                    >
+                      {label}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+                {!collapsed && highlight && !active && (
+                  <motion.span
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 700,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      background: "#EEF2FF",
+                      color: "#6366F1",
+                      padding: "2px 6px",
+                      borderRadius: 4,
+                    }}
+                  >
+                    AI
+                  </motion.span>
                 )}
-              />
-              {!collapsed && <span className="truncate">{label}</span>}
-              {!collapsed && highlight && !active && (
-                <span className="ml-auto text-[9px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded">AI</span>
-              )}
-            </Link>
-          );
-        })}
+              </Link>
+            );
+          })}
+        </div>
       </nav>
 
-      {/* Footer */}
-      <div className="px-2 pb-3 border-t border-gray-100 pt-3 space-y-0.5 shrink-0 overflow-hidden">
-        <Link
-          href="/settings"
-          title={collapsed ? "Settings" : undefined}
-          className={cn(
-            "flex items-center gap-2.5 rounded-lg text-[13px] font-medium transition-all duration-150 group",
-            collapsed ? "px-0 py-2 justify-center" : "px-3 py-2",
-            isActive("/settings")
-              ? "bg-indigo-50 text-indigo-700"
-              : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+      {/* ── Settings Section ── */}
+      <div
+        style={{
+          padding: collapsed ? "10px 10px" : "10px 12px",
+          borderTop: "1px solid #EBEBEB",
+        }}
+      >
+        <AnimatePresence>
+          {!collapsed && (
+            <motion.p
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 5 }}
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: "#B0B7C3",
+                padding: "8px 8px 6px",
+                whiteSpace: "nowrap",
+                overflow: "hidden"
+              }}
+            >
+              Settings
+            </motion.p>
           )}
-        >
-          <Settings
-            size={15}
-            strokeWidth={isActive("/settings") ? 2.2 : 1.8}
-            className={cn("shrink-0", isActive("/settings") ? "text-indigo-600" : "text-gray-400 group-hover:text-gray-600")}
-          />
-          {!collapsed && <span>Settings</span>}
-        </Link>
+        </AnimatePresence>
 
-        {/* Admin pill */}
-        {collapsed ? (
-          <div className="flex justify-center mt-2">
-            <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white text-[10px] font-bold">
-              A
-            </div>
-          </div>
-        ) : (
-          <div className="mt-2 mx-1 px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-100">
-            <div className="flex items-center gap-2.5">
-              <div className="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0">
-                A
-              </div>
-              <div className="min-w-0">
-                <div className="text-[12.5px] font-medium text-gray-800 leading-none">Admin</div>
-                <div className="text-[10.5px] text-gray-400 mt-0.5 truncate">admin@integritims.com</div>
-              </div>
-            </div>
-          </div>
-        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {SETTINGS_NAV.map(({ href, icon: Icon, label }) => {
+            const active = isActive(href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                title={collapsed ? label : undefined}
+                className="flex items-center rounded-lg transition-all duration-150 group overflow-hidden"
+                style={{
+                  gap: collapsed ? 0 : 10,
+                  padding: collapsed ? "9px 0" : "9px 10px",
+                  justifyContent: collapsed ? "center" : undefined,
+                  background: active ? "#EEF2FF" : "transparent",
+                  color: active ? "#4F46E5" : "#4B5563",
+                  fontWeight: active ? 600 : 500,
+                  fontSize: 13.5,
+                  textDecoration: "none",
+                }}
+                onMouseEnter={e => {
+                  if (!active) e.currentTarget.style.background = "#F0F0F0";
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = active ? "#EEF2FF" : "transparent";
+                }}
+              >
+                <Icon
+                  size={16}
+                  strokeWidth={active ? 2.2 : 1.8}
+                  style={{
+                    flexShrink: 0,
+                    color: active ? "#4F46E5" : "#9CA3AF",
+                    transition: "color 0.15s",
+                  }}
+                />
+                <AnimatePresence>
+                  {!collapsed && (
+                    <motion.span
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: "auto" }}
+                      exit={{ opacity: 0, width: 0 }}
+                      transition={{ duration: 0.2 }}
+                      style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden" }}
+                    >
+                      {label}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </Link>
+            );
+          })}
+
+        </div>
       </div>
-    </aside>
+
+      {/* ── User Footer ── */}
+      <div
+        style={{
+          padding: collapsed ? "12px 10px" : "12px 16px",
+          borderTop: "1px solid #EBEBEB",
+          background: "#F5F5F5",
+        }}
+      >
+        <div className="relative h-8">
+          <AnimatePresence mode="wait">
+            {collapsed ? (
+              <motion.div
+                key="collapsed-user"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                className="flex justify-center"
+              >
+                <div
+                  className="flex items-center justify-center rounded-full text-white font-bold"
+                  style={{ width: 32, height: 32, background: "#4F46E5", fontSize: 12 }}
+                >
+                  A
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="expanded-user"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                className="flex items-center"
+                style={{ gap: 10 }}
+              >
+                <div
+                  className="flex items-center justify-center rounded-full text-white font-bold shrink-0"
+                  style={{ width: 32, height: 32, background: "#4F46E5", fontSize: 12 }}
+                >
+                  A
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    className="font-semibold truncate"
+                    style={{ fontSize: 13, color: "#111827", letterSpacing: "-0.1px" }}
+                  >
+                    Admin
+                  </div>
+                  <div
+                    className="truncate"
+                    style={{ fontSize: 11, color: "#9CA3AF", marginTop: 1 }}
+                  >
+                    admin@integritims.com
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+    </motion.aside>
   );
 }

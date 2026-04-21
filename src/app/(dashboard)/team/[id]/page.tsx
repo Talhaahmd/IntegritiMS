@@ -8,7 +8,7 @@ import ProgressBar from "@/components/ui/ProgressBar";
 import Avatar from "@/components/ui/Avatar";
 import { useTeamMember, useMemberTasks } from "@/lib/hooks/useTeam";
 import { formatDate, formatHours } from "@/lib/utils";
-import { ArrowLeft, Mail, Phone, Calendar, Clock, CheckSquare, AlertCircle, Briefcase, Star } from "lucide-react";
+import { ArrowLeft, Mail, Phone, Calendar, Clock, CheckSquare, Briefcase, Star, TrendingUp, Activity } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from "recharts";
@@ -40,127 +40,161 @@ export default function TeamMemberDetailPage({ params }: { params: Promise<{ id:
     { label: "Actual", value: totalAct },
   ];
 
+  const avatarBg = "linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)";
+
   return (
     <>
       <TopBar title={member.full_name} subtitle={member.title} />
-      <div className="p-8 animate-fade-in">
-        <Link href="/team" className="btn btn-ghost btn-sm mb-6 -ml-2">
-          <ArrowLeft size={14} /> Back to Team
+
+      <div style={{ padding: "24px 28px 40px" }} className="animate-fade-in">
+        
+        {/* Back Link */}
+        <Link href="/team" className="btn btn-ghost btn-sm" style={{ marginBottom: 20, marginLeft: -4, display: "inline-flex" }}>
+          <ArrowLeft size={13} /> Back to Team
         </Link>
 
-        {/* Header Card */}
-        <div className="card-lg p-6 mb-6">
-          <div className="flex items-start gap-6">
-            <Avatar name={member.full_name} size="lg" className="w-16 h-16 text-xl" />
-            <div className="flex-1">
-              <h2 className="text-[22px] font-semibold tracking-tight text-gray-900">{member.full_name}</h2>
-              <div className="text-[13.5px] mt-0.5" style={{ color: "var(--text-secondary)" }}>{member.title}</div>
-              <div className="flex items-center gap-2 mt-2">
-                <span className="chip bg-indigo-50 text-indigo-700">{member.primary_skill}</span>
-                <span className="chip bg-slate-100 text-slate-600 capitalize">{member.experience_level}</span>
-                <span className={`badge capitalize ${member.availability_status === "available" ? "bg-emerald-50 text-emerald-700" : member.availability_status === "fully booked" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>
-                  <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />
+        {/* ══════════ Header Card ══════════ */}
+        <div className="card-lg" style={{ padding: "24px 26px", marginBottom: 18 }}>
+          
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 20 }}>
+            <div style={{
+              width: 64, height: 64, borderRadius: 16,
+              background: avatarBg,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+              boxShadow: "0 4px 14px rgba(99,102,241,0.28)",
+              color: "#fff", fontSize: 24, fontWeight: 800
+            }}>
+              {member.full_name.charAt(0).toUpperCase()}
+            </div>
+
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.5px", lineHeight: 1.2 }}>
+                {member.full_name}
+              </h2>
+              <div style={{ fontSize: 13.5, color: "var(--text-secondary)", marginTop: 4 }}>{member.title}</div>
+              
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                <span style={{ padding: "2px 10px", borderRadius: 999, fontSize: 12, fontWeight: 600, background: "var(--accent-light)", color: "var(--accent)" }}>
+                  {member.primary_skill}
+                </span>
+                <span style={{ padding: "2px 10px", borderRadius: 999, fontSize: 12, fontWeight: 600, background: "var(--surface-2)", color: "var(--text-tertiary)", border: "1px solid var(--border)" }}>
+                  {member.experience_level.toUpperCase()}
+                </span>
+                <span style={{ 
+                  display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 10px", borderRadius: 999, fontSize: 12, fontWeight: 600,
+                  background: member.availability_status === "available" ? "#ECFDF5" : member.availability_status === "fully booked" ? "#FEF2F2" : "#FFFBEB",
+                  color: member.availability_status === "available" ? "#059669" : member.availability_status === "fully booked" ? "#DC2626" : "#D97706",
+                  border: `1px solid ${member.availability_status === "available" ? "#A7F3D0" : member.availability_status === "fully booked" ? "#FCA5A5" : "#FDE68A"}`
+                }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
                   {member.availability_status}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-6 mt-6 pt-6 border-t" style={{ borderColor: "var(--border)" }}>
-            <div className="flex items-center gap-2">
-              <Mail size={14} style={{ color: "var(--text-tertiary)" }} />
-              <div>
-                <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Email</div>
-                <div className="text-[13px] font-medium">{member.email}</div>
+          <div style={{
+            display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 0, marginTop: 22, paddingTop: 20, borderTop: "1px solid var(--border-subtle)"
+          }}>
+            {[
+              { label: "Email", icon: Mail, value: member.email },
+              { label: "Phone", icon: Phone, value: member.phone ?? "—" },
+              { label: "Joined Date", icon: Calendar, value: member.joining_date ? formatDate(member.joining_date) : "—" },
+              { label: "Hourly Rate", icon: Briefcase, value: member.hourly_rate ? `$${member.hourly_rate}/hr` : "—" },
+            ].map(({ label, icon: Icon, value }, i) => (
+              <div key={label} style={{ paddingLeft: i === 0 ? 0 : 20, borderLeft: i === 0 ? "none" : "1px solid var(--border-subtle)" }}>
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 6 }}>{label}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+                  <Icon size={12} style={{ color: "var(--text-tertiary)" }} />
+                  {value}
+                </div>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Phone size={14} style={{ color: "var(--text-tertiary)" }} />
-              <div>
-                <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Phone</div>
-                <div className="text-[13px] font-medium">{member.phone ?? "—"}</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Calendar size={14} style={{ color: "var(--text-tertiary)" }} />
-              <div>
-                <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Joined</div>
-                <div className="text-[13px] font-medium">{member.joining_date ? formatDate(member.joining_date) : "—"}</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Briefcase size={14} style={{ color: "var(--text-tertiary)" }} />
-              <div>
-                <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Rate</div>
-                <div className="text-[13px] font-medium">{member.hourly_rate ? `$${member.hourly_rate}/hr` : "—"}</div>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-5 gap-4 mb-6">
+        {/* ══════════ Stats Row ══════════ */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14, marginBottom: 18 }}>
           {[
-            { label: "Active Tasks", value: activeAssignments.length, color: "#6366F1", bg: "#EEF2FF" },
-            { label: "Completed", value: completedAssignments.length, color: "#10B981", bg: "#ECFDF5" },
-            { label: "On-Time Rate", value: `${onTimeRate}%`, color: onTimeRate >= 80 ? "#10B981" : "#F59E0B", bg: "#FFFBEB" },
-            { label: "Total Est. Hours", value: formatHours(totalEst), color: "#6366F1", bg: "#EEF2FF" },
-            { label: "Total Actual Hours", value: formatHours(totalAct), color: totalAct > totalEst ? "#EF4444" : "#10B981", bg: totalAct > totalEst ? "#FEF2F2" : "#ECFDF5" },
+            { label: "Active Tasks", value: activeAssignments.length, color: "#4F46E5", bg: "#EEF2FF", icon: Clock },
+            { label: "Completed", value: completedAssignments.length, color: "#059669", bg: "#ECFDF5", icon: CheckSquare },
+            { label: "Efficiency", value: `${onTimeRate}%`, color: onTimeRate >= 80 ? "#059669" : "#D97706", bg: "#FFFBEB", icon: TrendingUp },
+            { label: "Est. Hours", value: formatHours(totalEst), color: "#4F46E5", bg: "#EEF2FF", icon: Star },
+            { label: "Actual Hours", value: formatHours(totalAct), color: totalAct > totalEst ? "#DC2626" : "#059669", bg: totalAct > totalEst ? "#FEF2F2" : "#ECFDF5", icon: Activity },
           ].map((s) => (
-            <div key={s.label} className="card p-4">
-              <div className="w-8 h-8 rounded-xl mb-3 flex items-center justify-center" style={{ background: s.bg }}>
-                <Star size={13} style={{ color: s.color }} />
+            <div key={s.label} className="card" style={{ padding: "16px 18px" }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: s.bg, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
+                <s.icon size={15} style={{ color: s.color }} />
               </div>
-              <div className="text-[20px] font-semibold tracking-tight" style={{ color: s.color }}>{s.value}</div>
-              <div className="text-[12px] mt-0.5 text-gray-500">{s.label}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: s.color, letterSpacing: "-0.5px", lineHeight: 1 }}>{s.value}</div>
+              <div style={{ fontSize: 11.5, color: "var(--text-secondary)", marginTop: 5, fontWeight: 500 }}>{s.label}</div>
             </div>
           ))}
         </div>
 
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          {/* Performance Chart */}
-          <div className="card-lg p-5 col-span-1">
-            <div className="font-semibold text-[14px] mb-4">Hours Overview</div>
-            <ResponsiveContainer width="100%" height={160}>
-              <BarChart data={perfData} margin={{ left: -30, right: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--text-tertiary)" }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: "var(--text-tertiary)" }} tickLine={false} axisLine={false} />
-                <Tooltip />
-                <Bar dataKey="value" fill="#6366F1" radius={[4, 4, 0, 0]} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 14, marginBottom: 18 }}>
+          
+          {/* Hours Overview Chart */}
+          <div className="card-lg" style={{ padding: "20px 22px" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", marginBottom: 18 }}>Hours Overview</div>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={perfData} margin={{ left: -30, right: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
+                <Tooltip cursor={{ fill: "var(--surface-2)" }} />
+                <Bar dataKey="value" fill="var(--accent)" radius={[5, 5, 0, 0]} barSize={40} />
               </BarChart>
             </ResponsiveContainer>
           </div>
 
-          {/* Expertise */}
-          <div className="card-lg p-5 col-span-2">
-            <div className="font-semibold text-[14px] mb-4">Expertise & Skills</div>
-            <div className="flex flex-wrap gap-2">
+          {/* Skills & Expertise */}
+          <div className="card-lg" style={{ padding: "20px 22px" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", marginBottom: 18 }}>Expertise & Professional Skills</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
               {(member.expertise ?? []).map((ex) => (
-                <span key={ex} className="chip bg-indigo-50 text-indigo-700 text-[12px]">{ex}</span>
+                <span key={ex} style={{ 
+                  padding: "4px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 600, 
+                  background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border)" 
+                }}>
+                  {ex}
+                </span>
               ))}
               {(!member.expertise || member.expertise.length === 0) && (
-                <span className="text-[13px]" style={{ color: "var(--text-tertiary)" }}>No expertise listed.</span>
+                <div style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No expertise listed.</div>
               )}
             </div>
+            
             {member.notes && (
-              <div className="mt-4 pt-4 border-t" style={{ borderColor: "var(--border)" }}>
-                <div className="section-title mb-2">Notes</div>
-                <p className="text-[13.5px]" style={{ color: "var(--text-secondary)" }}>{member.notes}</p>
+              <div style={{ paddingTop: 18, borderTop: "1px solid var(--border-subtle)" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--text-tertiary)", marginBottom: 8 }}>Internal Notes</div>
+                <p style={{ fontSize: 13.5, color: "var(--text-secondary)", lineHeight: 1.6 }}>{member.notes}</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Tasks */}
-        <div className="card-lg overflow-hidden">
-          <div className="px-6 py-4 border-b font-semibold text-[14px]" style={{ borderColor: "var(--border)" }}>
-            Assigned Tasks ({assignments.length})
+        {/* Assigned Tasks Table */}
+        <div className="card-lg" style={{ overflow: "hidden" }}>
+          <div style={{ padding: "16px 22px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>Assigned Tasks</div>
+            <span style={{ padding: "1px 8px", borderRadius: 999, fontSize: 12, fontWeight: 600, background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-tertiary)" }}>
+              {assignments.length}
+            </span>
           </div>
-          {assignments.length === 0 ? (
-            <div className="p-8 text-center text-[13px]" style={{ color: "var(--text-tertiary)" }}>No tasks assigned.</div>
-          ) : (
-            <table>
+          
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ minWidth: 900 }}>
+              <colgroup>
+                <col style={{ width: "25%" }} />
+                <col style={{ width: "20%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "11%" }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Task</th>
@@ -179,22 +213,26 @@ export default function TeamMemberDetailPage({ params }: { params: Promise<{ id:
                   return (
                     <tr key={a.id as string}>
                       <td>
-                        <Link href={`/tasks/${task?.id}`} className="font-medium text-[13.5px] hover:underline">
-                          {task?.name as string ?? "—"}
+                        <Link href={`/tasks/${task?.id}`} style={{ textDecoration: "none" }}>
+                          <div style={{ fontWeight: 600, fontSize: 13.5, color: "var(--text-primary)" }}>{task?.name as string ?? "—"}</div>
                         </Link>
                       </td>
-                      <td className="text-[13px]">{project?.name as string ?? "—"}</td>
-                      <td><span className="chip bg-slate-100 text-slate-600 capitalize text-[11.5px]">{task?.category as string ?? "—"}</span></td>
+                      <td style={{ fontSize: 13, color: "var(--text-secondary)" }}>{project?.name as string ?? "—"}</td>
+                      <td>
+                        <span style={{ padding: "2px 10px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: "var(--surface-2)", color: "var(--text-tertiary)", textTransform: "capitalize" }}>
+                          {task?.category as string ?? "—"}
+                        </span>
+                      </td>
                       <td><StatusBadge status={a.status as string} /></td>
                       <td><PriorityBadge priority={task?.priority as string ?? "medium"} /></td>
-                      <td className="text-[13px]">{formatHours(a.estimated_hours as number)}</td>
-                      <td className="text-[12.5px]">{task?.expected_end ? formatDate(task.expected_end as string) : "—"}</td>
+                      <td style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{formatHours(a.estimated_hours as number)}</td>
+                      <td style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text-primary)" }}>{task?.expected_end ? formatDate(task.expected_end as string) : "—"}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-          )}
+          </div>
         </div>
       </div>
     </>

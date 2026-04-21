@@ -11,19 +11,29 @@ import { useClients } from "@/lib/hooks/useClients";
 import { useProjects } from "@/lib/hooks/useProjects";
 import { createClient as createSBClient } from "@/lib/supabase/client";
 import { format, addDays, startOfWeek, isSameDay, parseISO, addMinutes } from "date-fns";
-import { ChevronLeft, ChevronRight, Plus, Trash2, AlertCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Trash2, AlertCircle, Calendar, Clock, User, Building2, FolderKanban } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TASK_CATEGORIES, TaskCategory } from "@/types";
 
 // 5pm (17) to 2am (26 = 2am next day) → 9 hour slots
-const HOUR_WIDTH = 72; // px per hour
+const HOUR_WIDTH = 76; // Slightly wider for better readability
 const WORK_HOURS: number[] = [17, 18, 19, 20, 21, 22, 23, 0, 1]; // 5pm → 2am
-const ROW_HEIGHT = 56; // px per developer row
+const ROW_HEIGHT = 60; // Slightly taller rows
+const SIDEBAR_WIDTH = 180;
 
 const COLOR_OPTIONS = [
   "#6366F1", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
   "#EC4899", "#0EA5E9", "#14B8A6", "#F97316", "#64748B",
 ];
+
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  fontSize: 12,
+  fontWeight: 600,
+  color: "var(--text-secondary)",
+  marginBottom: 5,
+  letterSpacing: "0.01em",
+};
 
 function displayHour(h: number): string {
   if (h === 0) return "12am";
@@ -32,9 +42,8 @@ function displayHour(h: number): string {
   return `${h - 12}pm`;
 }
 
-// How many slots from 5pm = 0 offset
 function hourOffset(h: number): number {
-  return h >= 17 ? h - 17 : h + 7; // 0→7, 1→8
+  return h >= 17 ? h - 17 : h + 7;
 }
 
 interface SlotPos { left: number; width: number }
@@ -45,7 +54,7 @@ function getSlotPos(startDt: string, endDt: string): SlotPos | null {
   const startOff = hourOffset(start.getHours()) + start.getMinutes() / 60;
   const durationH = (end.getTime() - start.getTime()) / 3_600_000;
   if (startOff < 0 || startOff >= WORK_HOURS.length) return null;
-  return { left: startOff * HOUR_WIDTH, width: Math.max(durationH * HOUR_WIDTH, 32) };
+  return { left: startOff * HOUR_WIDTH, width: Math.max(durationH * HOUR_WIDTH, 40) };
 }
 
 interface QuickAssignForm {
@@ -75,7 +84,7 @@ export default function SchedulerPage() {
   const today = new Date();
   const weekStart = startOfWeek(addDays(today, weekOffset * 7), { weekStartsOn: 1 });
   const weekDays = view === "week"
-    ? Array.from({ length: 5 }, (_, i) => addDays(weekStart, i)) // Mon–Fri
+    ? Array.from({ length: 5 }, (_, i) => addDays(weekStart, i))
     : [addDays(today, dayOffset)];
 
   const rangeStart = weekDays[0];
@@ -98,23 +107,19 @@ export default function SchedulerPage() {
     estimated_hours: 2, description: "", color: COLOR_OPTIONS[0],
   });
 
-  // Compute start/end datetimes from selected slot
   function getStartEndDt(): { startDt: string; endDt: string; startDisplay: string } | null {
     if (!selectedDate) return null;
-    const { hour, nextDay } = resolveHour(selectedHour);
+    const h = selectedHour;
+    const nextDay = h < 17;
     const d = new Date(selectedDate);
     if (nextDay) d.setDate(d.getDate() + 1);
-    d.setHours(hour, 0, 0, 0);
+    d.setHours(h, 0, 0, 0);
     const end = addMinutes(d, form.estimated_hours * 60);
     return {
       startDt: d.toISOString(),
       endDt: end.toISOString(),
       startDisplay: format(d, "EEE MMM d, h:mm a"),
     };
-  }
-
-  function resolveHour(h: number): { hour: number; nextDay: boolean } {
-    return h >= 17 ? { hour: h, nextDay: false } : { hour: h, nextDay: true };
   }
 
   function handleSlotClick(memberId: string, hour: number, day: Date) {
@@ -137,38 +142,28 @@ export default function SchedulerPage() {
     });
   }
 
-  const filteredProjects = form.client_id
-    ? projects.filter((p) => p.client_id === form.client_id)
-    : projects;
-
-  const filteredTasks = form.project_id
-    ? tasks.filter((t) => t.project_id === form.project_id)
-    : form.client_id
-    ? tasks.filter((t) => t.client_id === form.client_id)
-    : tasks;
+  const filteredProjects = form.client_id ? projects.filter((p) => p.client_id === form.client_id) : projects;
+  const filteredTasks = form.project_id ? tasks.filter((t) => t.project_id === form.project_id) : form.client_id ? tasks.filter((t) => t.client_id === form.client_id) : tasks;
 
   async function handleAssign(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedMemberId || !selectedDate) return;
-
     const times = getStartEndDt();
     if (!times) return;
     const { startDt, endDt } = times;
 
     if (checkOverlap(selectedMemberId, startDt, endDt)) {
-      setOverlapError("This developer already has a task scheduled during this time. Choose a different slot.");
+      setOverlapError("This slot overlaps with an existing schedule.");
       return;
     }
 
     setSaving(true);
-    setOverlapError("");
-
     let taskId = form.task_id;
     if (!taskId && form.task_name) {
       const { data: newTask } = await createTaskRecord({
         name: form.task_name,
         category: form.category,
-        priority: form.priority as "critical" | "high" | "medium" | "low",
+        priority: form.priority as any,
         status: "scheduled",
         client_id: form.client_id || null,
         project_id: form.project_id || null,
@@ -178,43 +173,24 @@ export default function SchedulerPage() {
         expected_start: startDt,
         expected_end: endDt,
       });
-      taskId = (newTask as { id: string } | null)?.id ?? "";
+      taskId = (newTask as any)?.id ?? "";
     }
 
     if (!taskId) { setSaving(false); return; }
 
     const sb = createSBClient();
-    const { data: existing } = await sb
-      .from("task_assignments")
-      .select("id")
-      .eq("task_id", taskId)
-      .eq("team_member_id", selectedMemberId)
-      .single();
-
-    let assignmentId = (existing as { id: string } | null)?.id;
+    const { data: existing } = await sb.from("task_assignments").select("id").eq("task_id", taskId).eq("team_member_id", selectedMemberId).single();
+    let assignmentId = (existing as any)?.id;
     if (!assignmentId) {
       const { data: newAsgn } = await sb.from("task_assignments").insert({
-        task_id: taskId,
-        team_member_id: selectedMemberId,
-        assigned_start: startDt,
-        assigned_end: endDt,
-        estimated_hours: form.estimated_hours,
-        actual_hours: 0,
-        status: "scheduled",
+        task_id: taskId, team_member_id: selectedMemberId, assigned_start: startDt, assigned_end: endDt, estimated_hours: form.estimated_hours, actual_hours: 0, status: "scheduled",
       }).select().single();
-      assignmentId = (newAsgn as { id: string } | null)?.id ?? "";
+      assignmentId = (newAsgn as any)?.id ?? "";
     }
 
     if (!assignmentId) { setSaving(false); return; }
 
-    await createSchedule({
-      team_member_id: selectedMemberId,
-      task_assignment_id: assignmentId,
-      start_datetime: startDt,
-      end_datetime: endDt,
-      color_code: form.color,
-    });
-
+    await createSchedule({ team_member_id: selectedMemberId, task_assignment_id: assignmentId, start_datetime: startDt, end_datetime: endDt, color_code: form.color });
     setSaving(false);
     setShowModal(false);
     reload();
@@ -232,125 +208,63 @@ export default function SchedulerPage() {
     </>
   );
 
-  const times = showModal ? getStartEndDt() : null;
+  const activeTimes = showModal ? getStartEndDt() : null;
 
   return (
     <>
       <TopBar title="Task Scheduler" subtitle="Visual schedule board · 5pm – 2am" />
 
-      <div className="p-6 animate-fade-in">
-        {/* Controls */}
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-2">
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => view === "week" ? setWeekOffset((o) => o - 1) : setDayOffset((o) => o - 1)}
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <div className="text-[14px] font-semibold text-gray-800 min-w-[200px] text-center">
-              {view === "week"
-                ? `${format(weekDays[0], "MMM d")} – ${format(weekDays[4], "MMM d, yyyy")}`
-                : format(weekDays[0], "EEEE, MMM d, yyyy")}
+      <div style={{ padding: "24px 28px 40px" }} className="animate-fade-in">
+        
+        {/* ── Toolbar ── */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 1, padding: 3, borderRadius: 10, background: "var(--surface-2)", border: "1px solid var(--border-subtle)" }}>
+              <button onClick={() => view === "week" ? setWeekOffset(o => o - 1) : setDayOffset(o => o - 1)} style={{ padding: "6px 8px", border: "none", background: "transparent", color: "var(--text-tertiary)", cursor: "pointer" }}><ChevronLeft size={16} /></button>
+              <div style={{ padding: "0 10px", fontSize: 13.5, fontWeight: 700, color: "var(--text-primary)", minWidth: 160, textAlign: "center" }}>
+                {view === "week" ? `${format(weekDays[0], "MMM d")} – ${format(weekDays[4], "MMM d, yyyy")}` : format(weekDays[0], "EEEE, MMM d, yyyy")}
+              </div>
+              <button onClick={() => view === "week" ? setWeekOffset(o => o + 1) : setDayOffset(o => o + 1)} style={{ padding: "6px 8px", border: "none", background: "transparent", color: "var(--text-tertiary)", cursor: "pointer" }}><ChevronRight size={16} /></button>
             </div>
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => view === "week" ? setWeekOffset((o) => o + 1) : setDayOffset((o) => o + 1)}
-            >
-              <ChevronRight size={14} />
-            </button>
-            <button
-              className="btn btn-ghost btn-sm text-indigo-600"
-              onClick={() => { setWeekOffset(0); setDayOffset(0); }}
-            >
-              Today
-            </button>
+            <button onClick={() => { setWeekOffset(0); setDayOffset(0); }} style={{ height: 36, padding: "0 16px", borderRadius: 10, border: "1px solid var(--border)", background: "#fff", fontSize: 13, fontWeight: 600, color: "var(--accent)", cursor: "pointer" }}>Today</button>
           </div>
 
-          <div className="flex items-center gap-2.5">
-            {/* View toggle */}
-            <div className="flex items-center gap-0.5 p-1 rounded-lg bg-gray-100">
-              {(["week", "day"] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={cn(
-                    "px-3 py-1 rounded-md text-[12.5px] font-medium transition-all capitalize",
-                    view === v ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"
-                  )}
-                >
-                  {v}
-                </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 1, padding: 3, borderRadius: 10, background: "var(--surface-2)", border: "1px solid var(--border-subtle)" }}>
+              {(["week", "day"] as const).map(v => (
+                <button key={v} onClick={() => setView(v)} style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: view === v ? "#fff" : "transparent", boxShadow: view === v ? "0 2px 6px rgba(0,0,0,0.06)" : "none", color: view === v ? "var(--accent)" : "var(--text-tertiary)", cursor: "pointer", transition: "all 0.15s", fontSize: 12.5, fontWeight: 600, textTransform: "capitalize" }}>{v}</button>
               ))}
             </div>
-
-            <select
-              className="input-base h-9 w-44 text-[12.5px]"
-              value={memberFilter}
-              onChange={(e) => setMemberFilter(e.target.value)}
-            >
+            <select className="input-base" style={{ height: 36, width: 180, fontSize: 13 }} value={memberFilter} onChange={e => setMemberFilter(e.target.value)}>
               <option value="all">All Developers</option>
-              {members.map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+              {members.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}
             </select>
-
-            <button className="btn btn-primary btn-sm" onClick={() => {
-              setSelectedMemberId(null);
-              setSelectedDate(weekDays[0]);
-              setSelectedHour(17);
-              setOverlapError("");
-              setShowModal(true);
-            }}>
-              <Plus size={13} /> Schedule Task
+            <button className="btn btn-primary" style={{ height: 36, fontSize: 13, gap: 6 }} onClick={() => { setSelectedMemberId(null); setSelectedDate(weekDays[0]); setSelectedHour(17); setShowModal(true); }}>
+              <Plus size={14} /> Schedule Task
             </button>
           </div>
         </div>
 
-        {/* Grid */}
-        <div className="card-lg overflow-hidden">
-          {/* Sticky header */}
-          <div className="overflow-x-auto">
-            <div style={{ minWidth: 160 + weekDays.length * WORK_HOURS.length * HOUR_WIDTH }}>
-
-              {/* Day + hour headers */}
-              <div className="flex bg-gray-50 border-b border-gray-100">
-                {/* Developer column header */}
-                <div
-                  className="shrink-0 border-r border-gray-100 flex items-end px-4 pb-2 bg-gray-50"
-                  style={{ width: 160 }}
-                >
-                  <span className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase">Developer</span>
+        {/* ── Grid Board ── */}
+        <div className="card-lg" style={{ overflow: "hidden" }}>
+          <div style={{ overflowX: "auto" }}>
+            <div style={{ minWidth: SIDEBAR_WIDTH + weekDays.length * WORK_HOURS.length * HOUR_WIDTH }}>
+              
+              {/* Grid Header */}
+              <div style={{ display: "flex", background: "var(--surface-2)", borderBottom: "1px solid var(--border)" }}>
+                <div style={{ width: SIDEBAR_WIDTH, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", alignItems: "flex-end", padding: "12px 16px", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  Developer
                 </div>
-
-                {/* Day columns */}
-                {weekDays.map((day) => (
-                  <div
-                    key={day.toISOString()}
-                    className="border-r border-gray-100 last:border-r-0"
-                    style={{ width: WORK_HOURS.length * HOUR_WIDTH }}
-                  >
-                    {/* Day label */}
-                    <div
-                      className={cn(
-                        "px-3 pt-2.5 pb-1 border-b border-gray-100 text-center",
-                        isSameDay(day, today) ? "bg-indigo-50" : ""
-                      )}
-                    >
-                      <span className={cn("text-[12px] font-semibold", isSameDay(day, today) ? "text-indigo-600" : "text-gray-700")}>
-                        {format(day, "EEE")}
-                      </span>
-                      <span className={cn("text-[11px] ml-1.5", isSameDay(day, today) ? "text-indigo-500" : "text-gray-400")}>
-                        {format(day, "d MMM")}
-                      </span>
+                {weekDays.map(day => (
+                  <div key={day.toISOString()} style={{ width: WORK_HOURS.length * HOUR_WIDTH, borderRight: "1px solid var(--border)" }}>
+                    <div style={{ padding: "10px 0", textAlign: "center", borderBottom: "1px solid var(--border-subtle)", background: isSameDay(day, today) ? "var(--accent-light)" : "transparent" }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: isSameDay(day, today) ? "var(--accent)" : "var(--text-primary)" }}>{format(day, "EEEE")}</span>
+                      <span style={{ fontSize: 12, marginLeft: 6, color: isSameDay(day, today) ? "var(--accent)" : "var(--text-tertiary)", fontWeight: 500 }}>{format(day, "d MMM")}</span>
                     </div>
-                    {/* Hour sub-labels */}
-                    <div className="flex">
-                      {WORK_HOURS.map((h) => (
-                        <div
-                          key={h}
-                          className="text-center py-1 border-r border-gray-50 last:border-r-0"
-                          style={{ width: HOUR_WIDTH, minWidth: HOUR_WIDTH }}
-                        >
-                          <span className="text-[10px] text-gray-400 font-medium">{displayHour(h)}</span>
+                    <div style={{ display: "flex" }}>
+                      {WORK_HOURS.map(h => (
+                        <div key={h} style={{ width: HOUR_WIDTH, flexShrink: 0, textAlign: "center", padding: "6px 0", fontSize: 10, fontWeight: 600, color: "var(--text-tertiary)", borderRight: "1px solid var(--border-subtle)", opacity: 0.8 }}>
+                          {displayHour(h)}
                         </div>
                       ))}
                     </div>
@@ -358,275 +272,180 @@ export default function SchedulerPage() {
                 ))}
               </div>
 
-              {/* Developer rows */}
-              {filteredMembers.length === 0 ? (
-                <div className="p-10 text-center text-[13px] text-gray-400">No developers found.</div>
-              ) : (
-                filteredMembers.map((member) => (
-                  <div key={member.id} className="flex border-b border-gray-100 last:border-b-0 group/row hover:bg-gray-50/50 transition-colors">
-                    {/* Developer info */}
-                    <div
-                      className="shrink-0 border-r border-gray-100 flex items-center px-3 gap-2.5 bg-white group-hover/row:bg-gray-50/50 transition-colors"
-                      style={{ width: 160, height: ROW_HEIGHT }}
-                    >
-                      <Avatar name={member.full_name} size="sm" />
-                      <div className="min-w-0">
-                        <div className="text-[12.5px] font-medium text-gray-800 truncate leading-tight">{member.full_name.split(" ")[0]}</div>
-                        <div className="text-[10.5px] text-gray-400 truncate leading-tight">{member.title.split(" ").slice(0, 2).join(" ")}</div>
-                      </div>
+              {/* Grid Body */}
+              {filteredMembers.map(member => (
+                <div key={member.id} style={{ display: "flex", borderBottom: "1px solid var(--border)", background: "#fff" }}>
+                  {/* Dev Sidebar */}
+                  <div style={{ width: SIDEBAR_WIDTH, height: ROW_HEIGHT, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12, padding: "0 16px" }}>
+                    <Avatar name={member.full_name} size="sm" />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{member.full_name.split(" ")[0]}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{member.title}</div>
                     </div>
-
-                    {/* Day × time cells */}
-                    {weekDays.map((day) => {
-                      const dayBlocks = schedules.filter((s) => {
-                        const d = parseISO(s.start_datetime);
-                        return s.team_member_id === member.id && isSameDay(d, day);
-                      });
-
-                      return (
-                        <div
-                          key={day.toISOString()}
-                          className={cn("relative border-r border-gray-100 last:border-r-0", isSameDay(day, today) ? "bg-indigo-50/30" : "")}
-                          style={{ width: WORK_HOURS.length * HOUR_WIDTH, height: ROW_HEIGHT }}
-                        >
-                          {/* Clickable hour slots */}
-                          <div className="flex h-full">
-                            {WORK_HOURS.map((hour) => (
-                              <div
-                                key={hour}
-                                className="h-full border-r border-gray-50 last:border-r-0 cursor-pointer hover:bg-indigo-50/60 transition-colors flex items-center justify-center group/slot"
-                                style={{ width: HOUR_WIDTH, minWidth: HOUR_WIDTH }}
-                                onClick={() => handleSlotClick(member.id, hour, day)}
-                              >
-                                <Plus size={11} className="opacity-0 group-hover/slot:opacity-40 text-indigo-400 transition-opacity" />
-                              </div>
-                            ))}
-                          </div>
-
-                          {/* Schedule blocks (absolute) */}
-                          {dayBlocks.map((block) => {
-                            const pos = getSlotPos(block.start_datetime, block.end_datetime);
-                            if (!pos) return null;
-                            const color = block.color_code ?? "#6366F1";
-                            const task = (block as { task_assignment?: { tasks?: { name: string; category: string } } }).task_assignment?.tasks;
-                            return (
-                              <div
-                                key={block.id}
-                                className="absolute top-1 bottom-1 rounded-md px-2 flex items-center gap-1.5 group/block cursor-pointer z-10 overflow-hidden"
-                                style={{
-                                  left: pos.left + 1,
-                                  width: pos.width - 2,
-                                  background: `${color}20`,
-                                  borderLeft: `3px solid ${color}`,
-                                }}
-                              >
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-[11px] font-semibold truncate" style={{ color }}>
-                                    {task?.name ?? "Task"}
-                                  </div>
-                                  {pos.width > 100 && (
-                                    <div className="text-[9.5px] text-gray-400 truncate capitalize">
-                                      {task?.category}
-                                    </div>
-                                  )}
-                                </div>
-                                <button
-                                  className="opacity-0 group-hover/block:opacity-100 transition-opacity p-0.5 rounded hover:bg-red-100 shrink-0"
-                                  onClick={(e) => { e.stopPropagation(); handleDelete(block.id); }}
-                                >
-                                  <Trash2 size={9} className="text-red-400" />
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })}
                   </div>
-                ))
-              )}
+
+                  {/* Day Slots */}
+                  {weekDays.map(day => {
+                    const dayBlocks = schedules.filter(s => s.team_member_id === member.id && isSameDay(parseISO(s.start_datetime), day));
+                    return (
+                      <div key={day.toISOString()} style={{ width: WORK_HOURS.length * HOUR_WIDTH, height: ROW_HEIGHT, display: "flex", position: "relative", borderRight: "1px solid var(--border)", background: isSameDay(day, today) ? "rgba(79, 70, 229, 0.02)" : "transparent" }}>
+                        {WORK_HOURS.map(h => (
+                          <div key={h} onClick={() => handleSlotClick(member.id, h, day)} style={{ width: HOUR_WIDTH, flexShrink: 0, borderRight: "1px solid var(--border-subtle)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }} className="hover:bg-indigo-50/40 transition-colors group">
+                            <Plus size={12} style={{ color: "var(--accent)", opacity: 0 }} className="group-hover:opacity-40" />
+                          </div>
+                        ))}
+                        {dayBlocks.map(block => {
+                          const pos = getSlotPos(block.start_datetime, block.end_datetime);
+                          if (!pos) return null;
+                          const color = block.color_code ?? "#6366F1";
+                          const task = (block as any).task_assignment?.tasks;
+                          return (
+                            <div key={block.id} style={{ position: "absolute", top: 6, bottom: 6, left: pos.left + 4, width: pos.width - 8, background: `${color}15`, borderLeft: `3px solid ${color}`, borderRadius: 8, padding: "4px 10px", display: "flex", alignItems: "center", gap: 8, zIndex: 10, cursor: "pointer", transition: "all 0.2s", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }} className="hover:shadow-md group/block">
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{task?.name ?? "Task"}</div>
+                                {pos.width > 120 && <div style={{ fontSize: 9, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginTop: 1 }}>{task?.category}</div>}
+                              </div>
+                              <button onClick={e => { e.stopPropagation(); handleDelete(block.id); }} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: 0 }} className="group-hover/block:opacity-100 hover:bg-red-50 transition-all"><Trash2 size={12} /></button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Schedule Modal */}
-      <Modal
-        open={showModal}
-        onClose={() => setShowModal(false)}
-        title="Schedule Task"
-        subtitle={times?.startDisplay
-          ? `Starting ${times.startDisplay} · ${form.estimated_hours}h estimated`
-          : "Pick a slot from the grid or set manually"}
-        size="lg"
-      >
-        <form onSubmit={handleAssign} className="space-y-4">
-          {/* Developer selector (if not pre-selected from grid click) */}
-          {!selectedMemberId && (
-            <div>
-              <label className="block text-[12.5px] font-medium mb-1.5 text-gray-500">Developer *</label>
-              <select className="input-base" required value={selectedMemberId ?? ""} onChange={(e) => setSelectedMemberId(e.target.value)}>
-                <option value="">Select developer…</option>
-                {members.map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}
-              </select>
+      <Modal open={showModal} onClose={() => setShowModal(false)} title="Schedule Task" subtitle={activeTimes?.startDisplay ? `Assigning for ${activeTimes.startDisplay}` : "Pick a time slot and assign a task."} size="lg">
+        <form onSubmit={handleAssign} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          
+          {/* Dev Selection */}
+          <div style={{ padding: "14px 16px", borderRadius: 14, background: "var(--surface-2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12 }}>
+            <Avatar name={members.find(m => m.id === selectedMemberId)?.full_name ?? "Pick Developer"} size="sm" />
+            <div style={{ flex: 1 }}>
+              <label style={{ ...labelStyle, marginBottom: 2 }}>Assign To</label>
+              {selectedMemberId ? (
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{members.find(m => m.id === selectedMemberId)?.full_name}</div>
+              ) : (
+                <select className="input-base" style={{ border: "none", background: "transparent", padding: 0, height: "auto", fontSize: 14, fontWeight: 700 }} required value={selectedMemberId ?? ""} onChange={e => setSelectedMemberId(e.target.value)}>
+                  <option value="">Select developer...</option>
+                  {members.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+                </select>
+              )}
             </div>
-          )}
+            {selectedMemberId && <button type="button" onClick={() => setSelectedMemberId(null)} style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", border: "none", background: "transparent", cursor: "pointer" }}>Change</button>}
+          </div>
 
-          {/* Selected developer pill */}
-          {selectedMemberId && (
-            <div className="flex items-center gap-2.5 p-3 rounded-xl bg-indigo-50 border border-indigo-100">
-              <Avatar name={members.find((m) => m.id === selectedMemberId)?.full_name ?? ""} size="sm" />
-              <div>
-                <div className="text-[13px] font-semibold text-indigo-800">{members.find((m) => m.id === selectedMemberId)?.full_name}</div>
-                <div className="text-[11px] text-indigo-500">{members.find((m) => m.id === selectedMemberId)?.title}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div>
+              <label style={labelStyle}>Date</label>
+              <div style={{ position: "relative" }}>
+                <Calendar size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" }} />
+                <input type="date" className="input-base" style={{ paddingLeft: 32 }} required value={selectedDate ? format(selectedDate, "yyyy-MM-dd") : ""} onChange={e => setSelectedDate(e.target.value ? new Date(e.target.value + "T00:00:00") : null)} />
               </div>
-              <button type="button" className="ml-auto text-[11px] text-indigo-400 hover:text-indigo-600" onClick={() => setSelectedMemberId(null)}>
-                Change
-              </button>
-            </div>
-          )}
-
-          {/* Date + Hour selectors */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[12.5px] font-medium mb-1.5 text-gray-500">Date *</label>
-              <input
-                type="date"
-                className="input-base"
-                required
-                value={selectedDate ? format(selectedDate, "yyyy-MM-dd") : ""}
-                onChange={(e) => setSelectedDate(e.target.value ? new Date(e.target.value + "T00:00:00") : null)}
-              />
             </div>
             <div>
-              <label className="block text-[12.5px] font-medium mb-1.5 text-gray-500">Start Hour *</label>
-              <select
-                className="input-base"
-                value={selectedHour}
-                onChange={(e) => setSelectedHour(Number(e.target.value))}
-              >
-                {WORK_HOURS.map((h) => (
-                  <option key={h} value={h}>{displayHour(h)} ({h === 0 ? "midnight" : h < 12 ? `${h}:00` : `${h}:00`})</option>
-                ))}
-              </select>
+              <label style={labelStyle}>Start Time</label>
+              <div style={{ position: "relative" }}>
+                <Clock size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" }} />
+                <select className="input-base" style={{ paddingLeft: 32 }} value={selectedHour} onChange={e => setSelectedHour(Number(e.target.value))}>
+                  {WORK_HOURS.map(h => <option key={h} value={h}>{displayHour(h)}</option>)}
+                </select>
+              </div>
             </div>
           </div>
 
-          {/* Estimated hours — drives end time */}
           <div>
-            <label className="block text-[12.5px] font-medium mb-1.5 text-gray-500">Estimated Hours *</label>
-            <div className="flex items-center gap-3">
-              <input
-                type="number"
-                className="input-base w-28"
-                min={0.5}
-                max={9}
-                step={0.5}
-                required
-                value={form.estimated_hours}
-                onChange={(e) => setForm((p) => ({ ...p, estimated_hours: Number(e.target.value) }))}
-              />
-              {times && (
-                <div className="text-[12.5px] text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
-                  Ends at <span className="font-semibold text-gray-700">{format(new Date(times.endDt), "h:mm a")}</span>
-                  {/* check if next day */}
-                  {new Date(times.endDt).getDate() !== selectedDate?.getDate() && (
-                    <span className="ml-1 text-amber-600 text-[11px]">(next day)</span>
-                  )}
+            <label style={labelStyle}>Duration (Hours)</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <input type="number" className="input-base" style={{ width: 100 }} min={0.5} max={9} step={0.5} required value={form.estimated_hours} onChange={e => setForm(p => ({ ...p, estimated_hours: Number(e.target.value) }))} />
+              {activeTimes && (
+                <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text-secondary)", background: "var(--surface-2)", padding: "8px 14px", borderRadius: 10 }}>
+                  Ends at <span style={{ fontWeight: 700, color: "var(--text-primary)" }}>{format(new Date(activeTimes.endDt), "h:mm a")}</span>
+                  {new Date(activeTimes.endDt).getDate() !== selectedDate?.getDate() && <span style={{ marginLeft: 6, color: "#D97706", fontSize: 11 }}>(Next Day)</span>}
                 </div>
               )}
             </div>
           </div>
 
-          {overlapError && (
-            <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-100 text-[12.5px] text-red-700">
-              <AlertCircle size={14} className="shrink-0 text-red-500" />
-              {overlapError}
-            </div>
-          )}
+          {overlapError && <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, background: "#FEF2F2", color: "#DC2626", fontSize: 12.5, fontWeight: 600 }}><AlertCircle size={14} /> {overlapError}</div>}
 
-          {/* Client + Project */}
-          <div className="grid grid-cols-2 gap-4">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <div>
-              <label className="block text-[12.5px] font-medium mb-1.5 text-gray-500">Client</label>
-              <select className="input-base" value={form.client_id} onChange={(e) => setForm((p) => ({ ...p, client_id: e.target.value, project_id: "", task_id: "" }))}>
-                <option value="">Any client…</option>
-                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <label style={labelStyle}>Client</label>
+              <select className="input-base" value={form.client_id} onChange={e => setForm(p => ({ ...p, client_id: e.target.value, project_id: "", task_id: "" }))}>
+                <option value="">Select client...</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-[12.5px] font-medium mb-1.5 text-gray-500">Project</label>
-              <select className="input-base" value={form.project_id} onChange={(e) => setForm((p) => ({ ...p, project_id: e.target.value, task_id: "" }))}>
-                <option value="">Any project…</option>
-                {filteredProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              <label style={labelStyle}>Project</label>
+              <select className="input-base" value={form.project_id} onChange={e => setForm(p => ({ ...p, project_id: e.target.value, task_id: "" }))}>
+                <option value="">Select project...</option>
+                {filteredProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
           </div>
 
-          {/* Existing task or new */}
           <div>
-            <label className="block text-[12.5px] font-medium mb-1.5 text-gray-500">Existing Task</label>
-            <select className="input-base" value={form.task_id} onChange={(e) => setForm((p) => ({ ...p, task_id: e.target.value, task_name: "" }))}>
-              <option value="">— Create new task below —</option>
-              {filteredTasks.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            <label style={labelStyle}>Task</label>
+            <select className="input-base" value={form.task_id} onChange={e => setForm(p => ({ ...p, task_id: e.target.value, task_name: "" }))}>
+              <option value="">Create new task...</option>
+              {filteredTasks.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
 
           {!form.task_id && (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <label className="block text-[12.5px] font-medium mb-1.5 text-gray-500">New Task Name *</label>
-                <input
-                  className="input-base"
-                  placeholder="Enter task name…"
-                  value={form.task_name}
-                  onChange={(e) => setForm((p) => ({ ...p, task_name: e.target.value }))}
-                  required={!form.task_id}
-                />
-              </div>
-              <div>
-                <label className="block text-[12.5px] font-medium mb-1.5 text-gray-500">Category</label>
-                <select className="input-base" value={form.category} onChange={(e) => setForm((p) => ({ ...p, category: e.target.value as TaskCategory }))}>
-                  {TASK_CATEGORIES.map((c) => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[12.5px] font-medium mb-1.5 text-gray-500">Priority</label>
-                <select className="input-base" value={form.priority} onChange={(e) => setForm((p) => ({ ...p, priority: e.target.value }))}>
-                  {["critical","high","medium","low"].map((p) => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
-                </select>
+            <div style={{ padding: 18, borderRadius: 14, border: "1px solid var(--border)", background: "var(--surface-2)" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-tertiary)", marginBottom: 12 }}>New Task Details</div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <TaskFormField label="Task Name" name="task_name" required value={form.task_name} onChange={(n, v) => setForm(p => ({ ...p, task_name: v }))} />
+                </div>
+                <TaskFormSelect label="Category" name="category" options={TASK_CATEGORIES.map(c => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) }))} value={form.category} onChange={(n, v) => setForm(p => ({ ...p, category: v as any }))} />
+                <TaskFormSelect label="Priority" name="priority" options={["critical","high","medium","low"].map(p => ({ value: p, label: p.charAt(0).toUpperCase() + p.slice(1) }))} value={form.priority} onChange={(n, v) => setForm(p => ({ ...p, priority: v }))} />
               </div>
             </div>
           )}
 
-          {/* Color */}
           <div>
-            <label className="block text-[12.5px] font-medium mb-1.5 text-gray-500">Block Color</label>
-            <div className="flex gap-2">
-              {COLOR_OPTIONS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className="w-7 h-7 rounded-full transition-transform hover:scale-110"
-                  style={{ background: c, outline: form.color === c ? `2px solid ${c}` : "none", outlineOffset: 2 }}
-                  onClick={() => setForm((p) => ({ ...p, color: c }))}
-                />
+            <label style={labelStyle}>Color Label</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              {COLOR_OPTIONS.map(c => (
+                <button key={c} type="button" onClick={() => setForm(p => ({ ...p, color: c }))} style={{ width: 28, height: 28, borderRadius: "50%", background: c, border: form.color === c ? "2px solid #fff" : "none", boxShadow: form.color === c ? `0 0 0 2px ${c}` : "none", cursor: "pointer", transition: "all 0.2s" }} />
               ))}
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={saving || (!form.task_id && !form.task_name) || !selectedDate || !selectedMemberId}
-            >
-              {saving ? "Scheduling…" : "Schedule Task"}
-            </button>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 16, borderTop: "1px solid var(--border-subtle)" }}>
+            <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)} style={{ height: 38, fontSize: 13.5 }}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving || (!form.task_id && !form.task_name) || !selectedDate || !selectedMemberId} style={{ height: 38, fontSize: 13.5, minWidth: 140 }}>{saving ? "Scheduling..." : "Schedule Task"}</button>
           </div>
         </form>
       </Modal>
     </>
+  );
+}
+
+function TaskFormField({ label, name, required, value, onChange }: any) {
+  return (
+    <div>
+      <label style={labelStyle}>{label}{required && <span style={{ color: "#EF4444", marginLeft: 3 }}>*</span>}</label>
+      <input className="input-base" required={required} value={value} onChange={e => onChange(name, e.target.value)} />
+    </div>
+  );
+}
+
+function TaskFormSelect({ label, name, options, value, onChange }: any) {
+  return (
+    <div>
+      <label style={labelStyle}>{label}</label>
+      <select className="input-base" value={value} onChange={e => onChange(name, e.target.value)}>
+        {options.map((o: any) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </div>
   );
 }

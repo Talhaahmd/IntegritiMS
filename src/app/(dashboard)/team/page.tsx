@@ -8,7 +8,7 @@ import Avatar from "@/components/ui/Avatar";
 import ProgressBar from "@/components/ui/ProgressBar";
 import { useTeamMembers, createTeamMemberRecord } from "@/lib/hooks/useTeam";
 import { EXPERTISE_OPTIONS, TeamMember } from "@/types";
-import { UserCog, Plus, Search, Mail, Phone, Clock, CheckSquare, LayoutGrid, List } from "lucide-react";
+import { UserCog, Plus, Search, Mail, Phone, Clock, CheckSquare, LayoutGrid, List, ChevronRight } from "lucide-react";
 import Link from "next/link";
 
 const AVAIL_COLORS: Record<string, string> = {
@@ -17,6 +17,47 @@ const AVAIL_COLORS: Record<string, string> = {
   "fully booked": "red",
   "on leave": "slate",
 };
+
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  fontSize: 12,
+  fontWeight: 600,
+  color: "var(--text-secondary)",
+  marginBottom: 5,
+  letterSpacing: "0.01em",
+};
+
+/* ── Field components moved OUTSIDE to avoid focus loss ── */
+function TeamFormField({ label, name, type = "text", required = false, value, onChange }: { 
+  label: string; name: string; type?: string; required?: boolean; value: string | number; onChange: (name: string, val: string) => void 
+}) {
+  return (
+    <div>
+      <label style={labelStyle}>{label}{required && <span style={{ color: "#EF4444", marginLeft: 3 }}>*</span>}</label>
+      <input
+        type={type}
+        className="input-base"
+        required={required}
+        placeholder={label}
+        value={value}
+        onChange={(e) => onChange(name, e.target.value)}
+      />
+    </div>
+  );
+}
+
+function TeamFormSelect({ label, name, options, value, onChange }: { 
+  label: string; name: string; options: { value: string; label: string }[]; value: string; onChange: (name: string, val: string) => void 
+}) {
+  return (
+    <div>
+      <label style={labelStyle}>{label}</label>
+      <select className="input-base" value={value} onChange={(e) => onChange(name, e.target.value)}>
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+}
 
 function TeamForm({ onSave, onClose }: { onSave: () => void; onClose: () => void }) {
   const [form, setForm] = useState({
@@ -27,6 +68,10 @@ function TeamForm({ onSave, onClose }: { onSave: () => void; onClose: () => void
     notes: "",
   });
   const [saving, setSaving] = useState(false);
+
+  function handleChange(name: string, val: string) {
+    setForm(p => ({ ...p, [name]: val }));
+  }
 
   function toggleExpertise(ex: string) {
     setForm((p) => ({
@@ -46,52 +91,39 @@ function TeamForm({ onSave, onClose }: { onSave: () => void; onClose: () => void
     onSave();
   }
 
-  const F = ({ label, name, type = "text", required = false }: { label: string; name: string; type?: string; required?: boolean }) => (
-    <div>
-      <label className="block text-[12.5px] font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>{label}</label>
-      <input
-        type={type}
-        className="input-base"
-        required={required}
-        value={(form as Record<string, unknown>)[name] as string}
-        onChange={(e) => setForm((p) => ({ ...p, [name]: e.target.value }))}
-      />
-    </div>
-  );
-
-  const Select = ({ label, name, options }: { label: string; name: string; options: { value: string; label: string }[] }) => (
-    <div>
-      <label className="block text-[12.5px] font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>{label}</label>
-      <select className="input-base" value={(form as Record<string, unknown>)[name] as string} onChange={(e) => setForm((p) => ({ ...p, [name]: e.target.value }))}>
-        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-    </div>
-  );
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      <div className="grid grid-cols-2 gap-4">
-        <F label="Full Name" name="full_name" required />
-        <F label="Title / Role" name="title" required />
-        <F label="Department" name="department" />
-        <F label="Primary Skill" name="primary_skill" required />
-        <F label="Email" name="email" type="email" required />
-        <F label="Phone" name="phone" />
-        <F label="Joining Date" name="joining_date" type="date" />
-        <F label="Hourly Rate ($)" name="hourly_rate" type="number" />
-        <Select label="Experience Level" name="experience_level" options={["junior","mid","senior","lead","expert"].map((v) => ({ value: v, label: v.charAt(0).toUpperCase() + v.slice(1) }))} />
-        <Select label="Availability" name="availability_status" options={["available","partially available","fully booked","on leave"].map((v) => ({ value: v, label: v.charAt(0).toUpperCase() + v.slice(1) }))} />
+    <form onSubmit={handleSubmit}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-tertiary)", marginBottom: 12 }}>
+        Personal Details
+      </div>
+      <div className="grid grid-cols-2 gap-4 mb-18" style={{ marginBottom: 18 }}>
+        <TeamFormField label="Full Name" name="full_name" required value={form.full_name} onChange={handleChange} />
+        <TeamFormField label="Email" name="email" type="email" required value={form.email} onChange={handleChange} />
+        <TeamFormField label="Phone" name="phone" value={form.phone} onChange={handleChange} />
+        <TeamFormField label="Joining Date" name="joining_date" type="date" value={form.joining_date} onChange={handleChange} />
       </div>
 
-      <div>
-        <label className="block text-[12.5px] font-medium mb-2" style={{ color: "var(--text-secondary)" }}>Expertise (select all that apply)</label>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-tertiary)", marginBottom: 12, paddingTop: 6, borderTop: "1px solid var(--border-subtle)" }}>
+        Professional Info
+      </div>
+      <div className="grid grid-cols-2 gap-4 mb-18" style={{ marginBottom: 18 }}>
+        <TeamFormField label="Title / Role" name="title" required value={form.title} onChange={handleChange} />
+        <TeamFormField label="Department" name="department" value={form.department} onChange={handleChange} />
+        <TeamFormField label="Primary Skill" name="primary_skill" required value={form.primary_skill} onChange={handleChange} />
+        <TeamFormField label="Hourly Rate ($)" name="hourly_rate" type="number" value={form.hourly_rate} onChange={handleChange} />
+        <TeamFormSelect label="Experience Level" name="experience_level" options={["junior","mid","senior","lead","expert"].map((v) => ({ value: v, label: v.charAt(0).toUpperCase() + v.slice(1) }))} value={form.experience_level} onChange={handleChange} />
+        <TeamFormSelect label="Availability" name="availability_status" options={["available","partially available","fully booked","on leave"].map((v) => ({ value: v, label: v.charAt(0).toUpperCase() + v.slice(1) }))} value={form.availability_status} onChange={handleChange} />
+      </div>
+
+      <div style={{ marginBottom: 18 }}>
+        <label style={labelStyle}>Expertise (select all that apply)</label>
         <div className="flex flex-wrap gap-2">
           {EXPERTISE_OPTIONS.map((ex) => (
             <button
               key={ex}
               type="button"
               onClick={() => toggleExpertise(ex)}
-              className={`chip transition-all text-[12px] cursor-pointer ${form.expertise.includes(ex) ? "bg-indigo-600 text-white" : ""}`}
+              className={`chip transition-all text-[11.5px] cursor-pointer ${form.expertise.includes(ex) ? "bg-indigo-600 text-white" : ""}`}
               style={!form.expertise.includes(ex) ? { background: "var(--surface-2)", color: "var(--text-secondary)", border: "1px solid var(--border)" } : {}}
             >
               {ex}
@@ -100,16 +132,30 @@ function TeamForm({ onSave, onClose }: { onSave: () => void; onClose: () => void
         </div>
       </div>
 
-      <div>
-        <label className="block text-[12.5px] font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>Notes</label>
-        <textarea className="input-base" rows={2} value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} />
+      <div style={{ marginBottom: 20 }}>
+        <label style={labelStyle}>Notes</label>
+        <textarea className="input-base" rows={2} placeholder="Internal notes about team member..." value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} />
       </div>
 
-      <div className="flex justify-end gap-3 pt-2">
-        <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-        <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Saving…" : "Add Member"}</button>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 16, borderTop: "1px solid var(--border-subtle)" }}>
+        <button type="button" className="btn btn-secondary" onClick={onClose} style={{ height: 36, fontSize: 13 }}>Cancel</button>
+        <button type="submit" className="btn btn-primary" disabled={saving} style={{ height: 36, fontSize: 13, minWidth: 120 }}>{saving ? "Saving…" : "Add Member"}</button>
       </div>
     </form>
+  );
+}
+
+function StatPill({ label, value, color, bg }: { label: string; value: number; color: string; bg: string }) {
+  return (
+    <div className="card" style={{ padding: "16px 18px", display: "flex", alignItems: "center", gap: 14 }}>
+      <div style={{ width: 38, height: 38, borderRadius: 10, background: bg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <UserCog size={16} style={{ color }} />
+      </div>
+      <div>
+        <div style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color, letterSpacing: "-0.5px" }}>{value}</div>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4, fontWeight: 500 }}>{label}</div>
+      </div>
+    </div>
   );
 }
 
@@ -136,46 +182,38 @@ export default function TeamPage() {
 
   return (
     <>
-      <TopBar title="Team Manager" subtitle={`${members.length} team members`} />
+      <TopBar title="Team Manager" subtitle={`${members.length} total team members`} />
 
-      <div className="p-8 animate-fade-in">
-        {/* Controls */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-tertiary)" }} />
-              <input className="input-base pl-9 h-9 w-64" placeholder="Search team…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div style={{ padding: "24px 28px 40px" }} className="animate-fade-in">
+        
+        {/* ── Summary Row ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 20 }}>
+          <StatPill label="Total Members" value={members.length} color="#4F46E5" bg="#EEF2FF" />
+          <StatPill label="Available" value={members.filter((m) => m.availability_status === "available").length} color="#059669" bg="#ECFDF5" />
+          <StatPill label="Partially Available" value={members.filter((m) => m.availability_status === "partially available").length} color="#D97706" bg="#FFFBEB" />
+          <StatPill label="Fully Booked" value={members.filter((m) => m.availability_status === "fully booked").length} color="#DC2626" bg="#FEF2F2" />
+        </div>
+
+        {/* ── Toolbar ── */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ position: "relative" }}>
+              <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", pointerEvents: "none" }} />
+              <input className="input-base" style={{ paddingLeft: 30, height: 36, width: 260, fontSize: 13 }} placeholder="Search team by name, role or skill..." value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
-            <select className="input-base h-9 w-48" value={availFilter} onChange={(e) => setAvailFilter(e.target.value)}>
+            <select className="input-base" style={{ height: 36, width: 180, fontSize: 13 }} value={availFilter} onChange={(e) => setAvailFilter(e.target.value)}>
               <option value="all">All Availability</option>
               {["available","partially available","fully booked","on leave"].map((s) => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
             </select>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 p-1 rounded-lg" style={{ background: "var(--surface-2)" }}>
-              <button className={`p-1.5 rounded-md transition-all ${viewMode === "card" ? "bg-white shadow-sm" : ""}`} onClick={() => setViewMode("card")}><LayoutGrid size={15} /></button>
-              <button className={`p-1.5 rounded-md transition-all ${viewMode === "table" ? "bg-white shadow-sm" : ""}`} onClick={() => setViewMode("table")}><List size={15} /></button>
-            </div>
-            <button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={15} /> Add Member</button>
-          </div>
-        </div>
 
-        {/* Summary */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
-          {[
-            { label: "Total Members", value: members.length, color: "#6366F1", bg: "#EEF2FF" },
-            { label: "Available", value: members.filter((m) => m.availability_status === "available").length, color: "#10B981", bg: "#ECFDF5" },
-            { label: "Partially Available", value: members.filter((m) => m.availability_status === "partially available").length, color: "#F59E0B", bg: "#FFFBEB" },
-            { label: "Fully Booked", value: members.filter((m) => m.availability_status === "fully booked").length, color: "#EF4444", bg: "#FEF2F2" },
-          ].map((s) => (
-            <div key={s.label} className="card p-4">
-              <div className="w-8 h-8 rounded-xl mb-3 flex items-center justify-center" style={{ background: s.bg }}>
-                <UserCog size={14} style={{ color: s.color }} />
-              </div>
-              <div className="text-[22px] font-semibold tracking-tight" style={{ color: s.color }}>{s.value}</div>
-              <div className="text-[12px] mt-0.5 text-gray-500">{s.label}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 1, padding: 3, borderRadius: 10, background: "var(--surface-2)", border: "1px solid var(--border-subtle)" }}>
+              <button style={{ padding: "6px 10px", borderRadius: 8, border: "none", background: viewMode === "card" ? "#fff" : "transparent", boxShadow: viewMode === "card" ? "0 2px 6px rgba(0,0,0,0.06)" : "none", color: viewMode === "card" ? "var(--accent)" : "var(--text-tertiary)", cursor: "pointer", transition: "all 0.15s" }} onClick={() => setViewMode("card")}><LayoutGrid size={15} /></button>
+              <button style={{ padding: "6px 10px", borderRadius: 8, border: "none", background: viewMode === "table" ? "#fff" : "transparent", boxShadow: viewMode === "table" ? "0 2px 6px rgba(0,0,0,0.06)" : "none", color: viewMode === "table" ? "var(--accent)" : "var(--text-tertiary)", cursor: "pointer", transition: "all 0.15s" }} onClick={() => setViewMode("table")}><List size={15} /></button>
             </div>
-          ))}
+            <button className="btn btn-primary" style={{ height: 36, fontSize: 13, gap: 6 }} onClick={() => setShowModal(true)}><Plus size={14} /> Add Member</button>
+          </div>
         </div>
 
         {filtered.length === 0 ? (
@@ -185,7 +223,7 @@ export default function TeamPage() {
             } />
           </div>
         ) : viewMode === "card" ? (
-          <div className="grid grid-cols-3 gap-4">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
             {filtered.map((member) => {
               const availColor = AVAIL_COLORS[member.availability_status] ?? "slate";
               const onTimeRate = member.completed_tasks && member.completed_tasks > 0
@@ -193,114 +231,153 @@ export default function TeamPage() {
                 : 0;
 
               return (
-                <Link key={member.id} href={`/team/${member.id}`} className="card-lg p-5 block hover:shadow-md transition-all">
-                  <div className="flex items-start gap-4 mb-4">
-                    <Avatar name={member.full_name} size="lg" />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-[14px] text-gray-900 truncate">{member.full_name}</div>
-                      <div className="text-[12px] mt-0.5 text-gray-500">{member.title}</div>
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <span className={`badge bg-${availColor}-50 text-${availColor}-700 text-[11px]`} style={{ fontSize: 10.5 }}>
-                          <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />
-                          {member.availability_status}
-                        </span>
-                        <span className="chip bg-slate-100 text-slate-500 text-[10.5px]">{member.experience_level}</span>
+                <Link key={member.id} href={`/team/${member.id}`} style={{ textDecoration: "none" }} className="card-lg hover-lift">
+                  <div style={{ padding: "20px 22px" }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 16 }}>
+                      <Avatar name={member.full_name} size="lg" />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{member.full_name}</div>
+                        <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2 }}>{member.title}</div>
+                        
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}>
+                          <span style={{ 
+                            display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 8px", borderRadius: 999, fontSize: 10.5, fontWeight: 600,
+                            background: `var(--${availColor}-light)`, color: `var(--${availColor})`, border: `1px solid var(--${availColor}-subtle)` 
+                          }}>
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
+                            {member.availability_status}
+                          </span>
+                          <span style={{ padding: "2px 8px", borderRadius: 999, fontSize: 10.5, fontWeight: 600, background: "var(--surface-2)", color: "var(--text-tertiary)", border: "1px solid var(--border)" }}>
+                            {member.experience_level.toUpperCase()}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-[12.5px]">
-                      <span style={{ color: "var(--text-secondary)" }}>On-time rate</span>
-                      <span className="font-semibold">{onTimeRate}%</span>
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyBetween: "space-between", marginBottom: 6 }}>
+                        <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>Efficiency</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>{onTimeRate}%</span>
+                      </div>
+                      <ProgressBar value={onTimeRate} showLabel={false} />
                     </div>
-                    <ProgressBar value={onTimeRate} />
-                  </div>
 
-                  <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-gray-100">
-                    <div className="text-center">
-                      <div className="text-[17px] font-semibold text-indigo-600">{member.active_tasks ?? 0}</div>
-                      <div className="text-[10.5px] text-gray-400 mt-0.5">Active</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, padding: "14px 0", borderTop: "1px solid var(--border-subtle)", borderBottom: "1px solid var(--border-subtle)" }}>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: "var(--accent)" }}>{member.active_tasks ?? 0}</div>
+                        <div style={{ fontSize: 10.5, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginTop: 2 }}>Active</div>
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: "#059669" }}>{member.completed_tasks ?? 0}</div>
+                        <div style={{ fontSize: 10.5, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginTop: 2 }}>Done</div>
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>{member.total_assigned_hours ?? 0}h</div>
+                        <div style={{ fontSize: 10.5, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginTop: 2 }}>Hours</div>
+                      </div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-[17px] font-semibold text-emerald-600">{member.completed_tasks ?? 0}</div>
-                      <div className="text-[10.5px] text-gray-400 mt-0.5">Done</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-[17px] font-semibold text-gray-700">{member.total_assigned_hours ?? 0}h</div>
-                      <div className="text-[10.5px] text-gray-400 mt-0.5">Hours</div>
-                    </div>
-                  </div>
 
-                  <div className="mt-3">
-                    <div className="chip bg-indigo-50 text-indigo-700 text-[11px]">{member.primary_skill}</div>
+                    <div style={{ marginTop: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ padding: "3px 10px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: "var(--accent-light)", color: "var(--accent)" }}>
+                        {member.primary_skill}
+                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--text-tertiary)" }}>
+                        <ChevronRight size={14} />
+                      </div>
+                    </div>
                   </div>
                 </Link>
               );
             })}
           </div>
         ) : (
-          <div className="card-lg overflow-hidden">
-            <table>
-              <thead>
-                <tr>
-                  <th>Member</th>
-                  <th>Role</th>
-                  <th>Skill</th>
-                  <th>Availability</th>
-                  <th>Active Tasks</th>
-                  <th>Completed</th>
-                  <th>Hours</th>
-                  <th>Contact</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((m) => (
-                  <tr key={m.id}>
-                    <td>
-                      <Link href={`/team/${m.id}`} className="flex items-center gap-3 hover:underline">
-                        <Avatar name={m.full_name} size="sm" />
-                        <div>
-                          <div className="font-medium text-[13.5px]">{m.full_name}</div>
-                          <div className="text-[11.5px]" style={{ color: "var(--text-tertiary)" }}>{m.experience_level}</div>
-                        </div>
-                      </Link>
-                    </td>
-                    <td className="text-[13px]">{m.title}</td>
-                    <td><span className="chip bg-indigo-50 text-indigo-700 text-[11px]">{m.primary_skill}</span></td>
-                    <td>
-                      <span className={`badge bg-${AVAIL_COLORS[m.availability_status] ?? "slate"}-50 text-${AVAIL_COLORS[m.availability_status] ?? "slate"}-700 capitalize`}>
-                        {m.availability_status}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="flex items-center gap-1.5 text-[13px]">
-                        <Clock size={12} style={{ color: "var(--text-tertiary)" }} />
-                        {m.active_tasks ?? 0}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="flex items-center gap-1.5 text-[13px] text-emerald-600">
-                        <CheckSquare size={12} />
-                        {m.completed_tasks ?? 0}
-                      </span>
-                    </td>
-                    <td className="text-[13px]">{m.total_assigned_hours ?? 0}h</td>
-                    <td>
-                      <div className="flex items-center gap-2">
-                        <a href={`mailto:${m.email}`} className="btn btn-icon btn-ghost btn-sm"><Mail size={12} /></a>
-                        {m.phone && <a href={`tel:${m.phone}`} className="btn btn-icon btn-ghost btn-sm"><Phone size={12} /></a>}
-                      </div>
-                    </td>
+          <div className="card-lg" style={{ overflow: "hidden" }}>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ minWidth: 1000 }}>
+                <colgroup>
+                  <col style={{ width: "22%" }} />
+                  <col style={{ width: "15%" }} />
+                  <col style={{ width: "12%" }} />
+                  <col style={{ width: "15%" }} />
+                  <col style={{ width: "10%" }} />
+                  <col style={{ width: "10%" }} />
+                  <col style={{ width: "8%" }} />
+                  <col style={{ width: "8%" }} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Member</th>
+                    <th>Role / Department</th>
+                    <th>Skill</th>
+                    <th>Availability</th>
+                    <th>Active</th>
+                    <th>Done</th>
+                    <th>Hours</th>
+                    <th>Contact</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {filtered.map((m) => {
+                    const availColor = AVAIL_COLORS[m.availability_status] ?? "slate";
+                    return (
+                      <tr key={m.id}>
+                        <td>
+                          <Link href={`/team/${m.id}`} style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 12 }}>
+                            <Avatar name={m.full_name} size="sm" />
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: 13.5, color: "var(--text-primary)" }}>{m.full_name}</div>
+                              <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginTop: 2 }}>{m.experience_level.toUpperCase()}</div>
+                            </div>
+                          </Link>
+                        </td>
+                        <td>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{m.title}</div>
+                          <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginTop: 2 }}>{m.department || "General"}</div>
+                        </td>
+                        <td>
+                          <span style={{ padding: "2px 8px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: "var(--accent-light)", color: "var(--accent)" }}>
+                            {m.primary_skill}
+                          </span>
+                        </td>
+                        <td>
+                          <span style={{ 
+                            display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 10px", borderRadius: 999, fontSize: 11, fontWeight: 600,
+                            background: `var(--${availColor}-light)`, color: `var(--${availColor})`, border: `1px solid var(--${availColor}-subtle)` 
+                          }}>
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
+                            {m.availability_status}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 600, color: "var(--accent)" }}>
+                            <Clock size={12} style={{ color: "var(--text-tertiary)" }} />
+                            {m.active_tasks ?? 0}
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 600, color: "#059669" }}>
+                            <CheckSquare size={12} />
+                            {m.completed_tasks ?? 0}
+                          </div>
+                        </td>
+                        <td style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{m.total_assigned_hours ?? 0}h</td>
+                        <td>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <a href={`mailto:${m.email}`} className="btn btn-icon btn-ghost btn-sm" title={m.email}><Mail size={13} /></a>
+                            {m.phone && <a href={`tel:${m.phone}`} className="btn btn-icon btn-ghost btn-sm" title={m.phone}><Phone size={13} /></a>}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
 
-      <Modal open={showModal} onClose={() => setShowModal(false)} title="Add Team Member" size="xl">
+      <Modal open={showModal} onClose={() => setShowModal(false)} title="Add Team Member" subtitle="Onboard a new member to your team." size="lg">
         <TeamForm onSave={() => { setShowModal(false); reload(); }} onClose={() => setShowModal(false)} />
       </Modal>
     </>
