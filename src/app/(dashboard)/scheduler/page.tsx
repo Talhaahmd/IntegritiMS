@@ -403,10 +403,10 @@ export default function SchedulerPage() {
               <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-tertiary)", marginBottom: 12 }}>New Task Details</div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
-                  <TaskFormField label="Task Name" name="task_name" required value={form.task_name} onChange={(n, v) => setForm(p => ({ ...p, task_name: v }))} />
+                  <TaskFormField label="Task Name" name="task_name" required value={form.task_name} onChange={(_n: string, v: string) => setForm(p => ({ ...p, task_name: v }))} />
                 </div>
-                <TaskFormSelect label="Category" name="category" options={TASK_CATEGORIES.map(c => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) }))} value={form.category} onChange={(n, v) => setForm(p => ({ ...p, category: v as any }))} />
-                <TaskFormSelect label="Priority" name="priority" options={["critical","high","medium","low"].map(p => ({ value: p, label: p.charAt(0).toUpperCase() + p.slice(1) }))} value={form.priority} onChange={(n, v) => setForm(p => ({ ...p, priority: v }))} />
+                <TaskFormSelect label="Category" name="category" options={TASK_CATEGORIES.map(c => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) }))} value={form.category} onChange={(_n: string, v: string) => setForm(p => ({ ...p, category: v as any }))} />
+                <TaskFormSelect label="Priority" name="priority" options={["critical","high","medium","low"].map(p => ({ value: p, label: p.charAt(0).toUpperCase() + p.slice(1) }))} value={form.priority} onChange={(_n: string, v: string) => setForm(p => ({ ...p, priority: v }))} />
               </div>
             </div>
           )}

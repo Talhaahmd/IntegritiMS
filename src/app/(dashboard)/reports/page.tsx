@@ -411,7 +411,7 @@ export default function ReportsPage() {
                         <td style={{ fontSize: 13, fontWeight: 700, color: variance > 0 ? "#DC2626" : "#059669" }}>{variance > 0 ? `+${variance.toFixed(1)}h` : `${variance.toFixed(1)}h`}</td>
                         <td>
                           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <ProgressBar value={rate} style={{ width: 80 }} />
+                            <ProgressBar value={rate} className="w-20" />
                             <span style={{ fontSize: 12, fontWeight: 700 }}>{rate}%</span>
                           </div>
                         </td>

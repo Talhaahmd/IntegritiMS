@@ -255,7 +255,7 @@ export default function TeamPage() {
                     </div>
 
                     <div style={{ marginBottom: 16 }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyBetween: "space-between", marginBottom: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                         <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>Efficiency</span>
                         <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>{onTimeRate}%</span>
                       </div>

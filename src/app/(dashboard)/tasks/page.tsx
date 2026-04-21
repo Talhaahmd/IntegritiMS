@@ -95,7 +95,7 @@ function TaskForm({ onSave, onClose }: { onSave: () => void; onClose: () => void
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-tertiary)", marginBottom: 12 }}>General Information</div>
         <div className="grid grid-cols-2 gap-4">
           <div className="col-span-2"><TaskFormField label="Task Name" name="name" required value={form.name} onChange={handleChange} /></div>
-          <TaskFormSelect label="Client" name="client_id" placeholder="Select client..." options={clients.map(c => ({ value: c.id, label: c.name }))} value={form.client_id} onChange={(n, v) => { handleChange(n, v); handleChange("project_id", ""); }} />
+          <TaskFormSelect label="Client" name="client_id" placeholder="Select client..." options={clients.map(c => ({ value: c.id, label: c.name }))} value={form.client_id} onChange={(n: string, v: string) => { handleChange(n, v); handleChange("project_id", ""); }} />
           <TaskFormSelect label="Project" name="project_id" placeholder="Select project..." options={filteredProjects.map(p => ({ value: p.id, label: p.name }))} value={form.project_id} onChange={handleChange} />
           <TaskFormSelect label="Category" name="category" options={TASK_CATEGORIES.map(c => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) }))} value={form.category} onChange={handleChange} />
           <TaskFormSelect label="Priority" name="priority" options={["critical","high","medium","low"].map(p => ({ value: p, label: p.charAt(0).toUpperCase() + p.slice(1) }))} value={form.priority} onChange={handleChange} />
@@ -118,8 +118,8 @@ function TaskForm({ onSave, onClose }: { onSave: () => void; onClose: () => void
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 16, borderTop: "1px solid var(--border-subtle)" }}>
-        <button type="button" className="btn btn-secondary" onClick={onClose} style={{ height: 38, px: 20 }}>Cancel</button>
-        <button type="submit" className="btn btn-primary" disabled={saving} style={{ height: 38, px: 24, minWidth: 120 }}>{saving ? "Creating…" : "Create Task"}</button>
+        <button type="button" className="btn btn-secondary" onClick={onClose} style={{ height: 38, padding: "0 20px" }}>Cancel</button>
+        <button type="submit" className="btn btn-primary" disabled={saving} style={{ height: 38, padding: "0 24px", minWidth: 120 }}>{saving ? "Creating…" : "Create Task"}</button>
       </div>
     </form>
   );
@@ -202,7 +202,7 @@ export default function TasksPage() {
               {TASK_CATEGORIES.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
             </select>
           </div>
-          <button className="btn btn-primary" style={{ height: 34, px: 16, gap: 6, fontSize: 13, fontWeight: 700 }} onClick={() => setShowModal(true)}>
+          <button className="btn btn-primary" style={{ height: 34, padding: "0 16px", gap: 6, fontSize: 13, fontWeight: 700 }} onClick={() => setShowModal(true)}>
             <Plus size={14} /> New Task
           </button>
         </div>

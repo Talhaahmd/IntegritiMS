@@ -161,7 +161,7 @@ export default function SettingsPage() {
               <input className="input-base" style={{ width: 320, height: 40, background: "#fff" }} defaultValue="admin@integritims.com" type="email" />
             </Field>
             <Field label="Account Protection" description="Manage passwords and two-factor authentication.">
-              <button className="btn btn-secondary" style={{ height: 40, fontSize: 13.5, gap: 8, px: 24 }}>
+              <button className="btn btn-secondary" style={{ height: 40, fontSize: 13.5, gap: 8, padding: "0 24px" }}>
                 <Shield size={14} /> Update Security Settings
               </button>
             </Field>
