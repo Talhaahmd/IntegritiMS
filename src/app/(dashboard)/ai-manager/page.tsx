@@ -39,7 +39,7 @@ function PriorityBadge({ priority }: { priority: string }) {
   };
   const s = styles[priority] || { bg: "#F8FAFC", text: "#64748B", border: "#F1F5F9" };
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", px: 8, py: 2, borderRadius: 6, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", background: s.bg, color: s.text, border: `1px solid ${s.border}`, padding: "2px 8px" }}>
+    <span style={{ display: "inline-flex", alignItems: "center", borderRadius: 6, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", background: s.bg, color: s.text, border: `1px solid ${s.border}`, padding: "2px 8px" }}>
       {priority}
     </span>
   );
