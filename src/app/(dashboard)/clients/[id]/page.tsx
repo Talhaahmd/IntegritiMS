@@ -279,7 +279,6 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                   fontSize: 13,
                   fontWeight: activeTab === tab ? 600 : 500,
                   color: activeTab === tab ? "var(--accent)" : "var(--text-secondary)",
-                  borderBottom: `2px solid ${activeTab === tab ? "var(--accent)" : "transparent"}`,
                   background: "none",
                   border: "none",
                   borderBottom: `2px solid ${activeTab === tab ? "var(--accent)" : "transparent"}`,
