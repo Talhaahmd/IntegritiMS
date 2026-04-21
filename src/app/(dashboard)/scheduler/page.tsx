@@ -252,7 +252,7 @@ export default function SchedulerPage() {
               
               {/* Grid Header */}
               <div style={{ display: "flex", background: "var(--surface-2)", borderBottom: "1px solid var(--border)" }}>
-                <div style={{ width: SIDEBAR_WIDTH, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", alignItems: "flex-end", padding: "12px 16px", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                <div style={{ width: SIDEBAR_WIDTH, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", alignItems: "flex-end", padding: "12px 16px", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.08em", position: "sticky", left: 0, zIndex: 20, background: "var(--surface-2)" }}>
                   Developer
                 </div>
                 {weekDays.map(day => (
@@ -276,7 +276,7 @@ export default function SchedulerPage() {
               {filteredMembers.map(member => (
                 <div key={member.id} style={{ display: "flex", borderBottom: "1px solid var(--border)", background: "#fff" }}>
                   {/* Dev Sidebar */}
-                  <div style={{ width: SIDEBAR_WIDTH, height: ROW_HEIGHT, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12, padding: "0 16px" }}>
+                  <div style={{ width: SIDEBAR_WIDTH, height: ROW_HEIGHT, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12, padding: "0 16px", position: "sticky", left: 0, zIndex: 10, background: "#fff" }}>
                     <Avatar name={member.full_name} size="sm" />
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{member.full_name.split(" ")[0]}</div>
