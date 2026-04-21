@@ -191,7 +191,7 @@ export default function AIManagerPage() {
                   <div style={{ padding: 16, borderRadius: 14, background: "var(--surface-2)", border: "1px solid var(--border-subtle)", marginBottom: 16 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", marginBottom: 8 }}>Agency On-Time Rate</div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <ProgressBar value={report.team_performance.on_time_rate} style={{ flex: 1 }} />
+                      <ProgressBar value={report.team_performance.on_time_rate} className="flex-1" />
                       <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>{report.team_performance.on_time_rate}%</span>
                     </div>
                   </div>
