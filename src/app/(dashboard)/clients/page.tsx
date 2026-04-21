@@ -192,7 +192,6 @@ function ClientForm({ onSave, onClose }: { onSave: () => void; onClose: () => vo
           display: "flex",
           justifyContent: "flex-end",
           gap: 10,
-          paddingTop: 4,
           borderTop: "1px solid var(--border-subtle)",
           paddingTop: 16,
         } as React.CSSProperties}
