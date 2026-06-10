@@ -153,10 +153,14 @@ function StatusCell({ task, onUpdate }: { task: Task; onUpdate: () => void }) {
 
   async function handleSelect(newStatus: TaskStatus) {
     setSaving(true);
+    const sb = createSBClient();
+
     if (newStatus === "paused" && task.status !== "paused") {
       const marker = `[PAUSED_AT:${new Date().toISOString()}]`;
       await updateTaskRecord(task.id, { status: "paused", notes: task.notes ? `${task.notes} ${marker}` : marker });
+
     } else if (newStatus === "in progress" && task.status === "paused") {
+      // Resuming from pause — extend expected_end by pause duration
       const match = (task.notes ?? "").match(/\[PAUSED_AT:([^\]]+)\]/);
       const pausedAt = match ? new Date(match[1]) : null;
       let newEnd = task.expected_end;
@@ -164,9 +168,41 @@ function StatusCell({ task, onUpdate }: { task: Task; onUpdate: () => void }) {
         const diff = Date.now() - pausedAt.getTime();
         newEnd = new Date(new Date(task.expected_end).getTime() + diff).toISOString();
       }
-      await updateTaskRecord(task.id, { status: "in progress", expected_end: newEnd ?? undefined, notes: (task.notes ?? "").replace(/\[PAUSED_AT:[^\]]+\]/g, "").trim() });
+      await updateTaskRecord(task.id, {
+        status: "in progress",
+        expected_end: newEnd ?? undefined,
+        notes: (task.notes ?? "").replace(/\[PAUSED_AT:[^\]]+\]/g, "").trim(),
+      });
+
+    } else if (newStatus === "in progress" && !task.actual_start) {
+      // First time starting — stamp actual_start
+      await updateTaskRecord(task.id, { status: "in progress", actual_start: new Date().toISOString() });
+
     } else if (newStatus === "completed") {
-      await updateTaskRecord(task.id, { status: "completed", actual_end: new Date().toISOString() });
+      // Auto-calculate actual_hours from actual_start (or expected_start) → now
+      const now = new Date();
+      const startRef = task.actual_start || task.expected_start;
+      let actualHours = task.actual_hours ?? 0;
+      let varianceHours = task.variance_hours ?? 0;
+      if (startRef) {
+        const diffMs = now.getTime() - new Date(startRef).getTime();
+        actualHours = Math.round((diffMs / 3_600_000) * 100) / 100;
+        varianceHours = Math.round((actualHours - task.estimated_hours) * 100) / 100;
+      }
+      await updateTaskRecord(task.id, {
+        status: "completed",
+        actual_end: now.toISOString(),
+        actual_hours: actualHours,
+        variance_hours: varianceHours,
+      });
+      // Mirror onto task_assignments so team member stats stay in sync
+      await sb.from("task_assignments").update({
+        status: "completed",
+        actual_end: now.toISOString(),
+        actual_hours: actualHours,
+        variance_hours: varianceHours,
+      }).eq("task_id", task.id);
+
     } else {
       await updateTaskRecord(task.id, { status: newStatus });
     }
@@ -351,35 +387,52 @@ function TaskForm({ onSave, onClose }: { onSave: () => void; onClose: () => void
   const { data: members } = useTeamMembers();
   const [form, setForm] = useState({
     name: "", description: "", client_id: "", project_id: "",
-    category: "development" as TaskCategory, priority: "medium", status: "not started",
-    estimated_hours: 0, actual_hours: 0, expected_start: "", expected_end: "", notes: "", assignee_id: "",
+    category: "development" as TaskCategory, priority: "medium",
+    estimated_hours: 8, notes: "", assignee_id: "",
   });
   const [saving, setSaving] = useState(false);
 
   function handleChange(name: string, val: string) {
-    setForm(p => {
-      const next = { ...p, [name]: ["estimated_hours", "actual_hours"].includes(name) ? Number(val) : val };
-      if ((name === "expected_start" || name === "estimated_hours") && next.expected_start && next.estimated_hours) {
-        next.expected_end = addHours(next.expected_start, next.estimated_hours).slice(0, 16);
-      }
-      return next;
-    });
+    setForm(p => ({ ...p, [name]: name === "estimated_hours" ? Number(val) : val }));
   }
 
   const filteredProjects = form.client_id ? projects.filter(p => p.client_id === form.client_id) : projects;
 
+  // Compute preview end date based on current time + estimated hours
+  const previewEnd = form.estimated_hours > 0
+    ? new Date(Date.now() + form.estimated_hours * 3_600_000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+    : null;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    const now = new Date();
+    const expectedStart = now.toISOString();
+    const expectedEnd = new Date(now.getTime() + form.estimated_hours * 3_600_000).toISOString();
     const { assignee_id, ...taskData } = form;
     const { data: newTask } = await createTaskRecord({
       ...taskData,
-      client_id: form.client_id || null, project_id: form.project_id || null,
-      expected_start: form.expected_start ? new Date(form.expected_start).toISOString() : null,
-      expected_end: form.expected_end ? new Date(form.expected_end).toISOString() : null,
+      status: "not started" as TaskStatus,
+      actual_hours: 0,
+      variance_hours: 0,
+      client_id: form.client_id || null,
+      project_id: form.project_id || null,
+      expected_start: expectedStart,
+      expected_end: expectedEnd,
+      actual_start: null,
+      actual_end: null,
     } as Partial<Task>);
     if (newTask && assignee_id) {
-      await createSBClient().from("task_assignments").insert({ task_id: (newTask as any).id, team_member_id: assignee_id, estimated_hours: form.estimated_hours, actual_hours: 0, status: "not started" });
+      await createSBClient().from("task_assignments").insert({
+        task_id: (newTask as any).id,
+        team_member_id: assignee_id,
+        estimated_hours: form.estimated_hours,
+        actual_hours: 0,
+        variance_hours: 0,
+        status: "not started",
+        assigned_start: expectedStart,
+        assigned_end: expectedEnd,
+      });
     }
     setSaving(false);
     onSave();
@@ -401,9 +454,20 @@ function TaskForm({ onSave, onClose }: { onSave: () => void; onClose: () => void
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-tertiary)", marginBottom: 12, paddingTop: 6, borderTop: "1px solid var(--border-subtle)" }}>Assignment & Time</div>
         <div className="grid grid-cols-2 gap-4">
           <TaskFormSelect label="Assign To" name="assignee_id" placeholder="Unassigned" options={members.map(m => ({ value: m.id, label: m.full_name }))} value={form.assignee_id} onChange={handleChange} />
-          <TaskFormField label="Est. Hours" name="estimated_hours" type="number" value={form.estimated_hours} onChange={handleChange} />
-          <TaskFormField label="Start Date" name="expected_start" type="datetime-local" value={form.expected_start} onChange={handleChange} />
-          <TaskFormField label="End Date (auto)" name="expected_end" type="datetime-local" value={form.expected_end} onChange={handleChange} />
+          <TaskFormField label="Estimated Hours" name="estimated_hours" type="number" value={form.estimated_hours} onChange={handleChange} />
+        </div>
+        {/* Time preview */}
+        <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "var(--surface-2)", border: "1px solid var(--border-subtle)", fontSize: 12, color: "var(--text-secondary)", display: "flex", gap: 18 }}>
+          <div>
+            <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>Starts:</span>{" "}
+            {new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} (now)
+          </div>
+          {previewEnd && (
+            <div>
+              <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>Estimated end:</span>{" "}
+              {previewEnd}
+            </div>
+          )}
         </div>
       </div>
       <div>
@@ -434,6 +498,21 @@ function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
       {label}
       <button onClick={onRemove} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)", display: "flex", padding: 0 }}><X size={11} /></button>
     </div>
+  );
+}
+
+function VarianceBadge({ variance }: { variance: number }) {
+  if (!variance || variance === 0) return null;
+  const over = variance > 0;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", fontSize: 9, fontWeight: 800,
+      padding: "1px 5px", borderRadius: 4, marginLeft: 4,
+      background: over ? "#FEF2F2" : "#ECFDF5",
+      color: over ? "#DC2626" : "#059669",
+    }}>
+      {over ? "+" : ""}{variance}h
+    </span>
   );
 }
 
@@ -715,14 +794,16 @@ export default function TasksPage() {
     const hours = parseFloat(val);
     if (isNaN(hours)) return;
     const newEnd = task.expected_start ? addHours(task.expected_start, hours) : task.expected_end;
-    await updateTaskRecord(task.id, { estimated_hours: hours, expected_end: newEnd ?? undefined });
+    const variance = task.actual_hours ? Math.round((task.actual_hours - hours) * 100) / 100 : 0;
+    await updateTaskRecord(task.id, { estimated_hours: hours, expected_end: newEnd ?? undefined, variance_hours: variance });
     reload();
   }
 
   async function handleUpdateActualHours(task: Task, val: string) {
     const hours = parseFloat(val);
     if (isNaN(hours)) return;
-    await updateTaskRecord(task.id, { actual_hours: hours });
+    const variance = Math.round((hours - task.estimated_hours) * 100) / 100;
+    await updateTaskRecord(task.id, { actual_hours: hours, variance_hours: variance });
     reload();
   }
 
@@ -968,7 +1049,14 @@ export default function TasksPage() {
                           <EditableNumberCell label="estimated hours" value={task.estimated_hours} onChange={v => handleUpdateEstHours(task, v)} />
                         </td>
                         <td style={{ padding: "10px 12px" }}>
-                          <EditableNumberCell label="actual hours" value={task.actual_hours} onChange={v => handleUpdateActualHours(task, v)} />
+                          {isDone ? (
+                            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-primary)" }}>{task.actual_hours}h</span>
+                              <VarianceBadge variance={task.variance_hours} />
+                            </div>
+                          ) : (
+                            <EditableNumberCell label="actual hours" value={task.actual_hours} onChange={v => handleUpdateActualHours(task, v)} />
+                          )}
                         </td>
                         <td style={{ padding: "10px 12px" }}>
                           <div style={{ fontSize: 11.5, color: "var(--text-secondary)" }}>
@@ -987,7 +1075,7 @@ export default function TasksPage() {
                 </tbody>
               </table>
               <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-tertiary)", borderTop: "1px solid var(--border-subtle)" }}>
-                Showing {filtered.length} of {tasks.length} tasks · Click status, assignee, client/project, or hours to edit inline
+                Showing {filtered.length} of {tasks.length} tasks · Click status, assignee, client/project, or est. hours to edit inline · Actual hours &amp; variance auto-calculated on completion
               </div>
             </div>
           )}
