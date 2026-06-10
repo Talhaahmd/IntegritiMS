@@ -7,7 +7,7 @@ import { StatusBadge, PriorityBadge, HealthBadge } from "@/components/ui/StatusB
 import ProgressBar from "@/components/ui/ProgressBar";
 import Modal from "@/components/ui/Modal";
 import { useProject, useProjectTasks, updateProjectRecord } from "@/lib/hooks/useProjects";
-import { createTaskRecord } from "@/lib/hooks/useTasks";
+import { createTaskRecord, useTasks } from "@/lib/hooks/useTasks";
 import { useClients } from "@/lib/hooks/useClients";
 import { useTeamMembers } from "@/lib/hooks/useTeam";
 import { useMilestones, createMilestoneRecord, updateMilestoneRecord, deleteMilestoneRecord } from "@/lib/hooks/useMilestones";
@@ -16,7 +16,7 @@ import { createClient as createSBClient } from "@/lib/supabase/client";
 import {
   ArrowLeft, Building2, Calendar, CheckSquare, Clock, AlertCircle,
   Users, Activity, Edit3, Save, X, Plus, Settings, ChevronDown,
-  Flag, Trash2, DollarSign, Check,
+  Flag, Trash2, DollarSign, Check, Search,
 } from "lucide-react";
 import { TASK_CATEGORIES, TASK_STATUSES, TaskCategory, Milestone, MilestoneStatus } from "@/types";
 
@@ -122,8 +122,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const loading = projectHook.loading;
   const reload = projectHook.reload;
   const tasksHook = useProjectTasks(id);
-  const tasks = tasksHook.data;
+  const tasks = tasksHook.data;         // tasks already linked to this project
   const reloadTasks = tasksHook.reload;
+  /* all tasks in the system — used for milestone picker so user can assign any task */
+  const allTasksHook = useTasks();
+  const allTasks = allTasksHook.data;
+  const reloadAllTasks = allTasksHook.reload;
   const { data: clients } = useClients();
   const { data: members } = useTeamMembers();
   const milestonesHook = useMilestones({ projectId: id });
@@ -141,6 +145,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [milestoneSaving, setMilestoneSaving] = useState(false);
   /* track which milestone's task panel is expanded */
   const [expandedMilestone, setExpandedMilestone] = useState<string | null>(null);
+  /* search query per milestone task panel */
+  const [msTaskSearch, setMsTaskSearch] = useState<Record<string, string>>({});
   /* track in-flight task assignment saves */
   const [togglingTask, setTogglingTask] = useState<string | null>(null);
 
@@ -231,16 +237,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }
 
   /**
-   * Check = assign task to milestone; uncheck = remove from milestone.
+   * Check = assign task to this milestone (and this project/client if not already).
+   * Uncheck = remove from milestone only; leaves project_id intact.
    * If task belonged to a different milestone it is simply reassigned.
    */
   async function handleTaskMilestoneToggle(taskId: string, milestoneId: string, checked: boolean) {
     setTogglingTask(taskId);
-    await createSBClient()
-      .from("tasks")
-      .update({ milestone_id: checked ? milestoneId : null })
-      .eq("id", taskId);
-    await Promise.all([reloadTasks(), reloadMilestones()]);
+    const update: Record<string, unknown> = { milestone_id: checked ? milestoneId : null };
+    if (checked) {
+      /* link task to this project + client so it surfaces everywhere */
+      update.project_id = id;
+      update.client_id = p.client_id || null;
+    }
+    await createSBClient().from("tasks").update(update).eq("id", taskId);
+    await Promise.all([reloadTasks(), reloadAllTasks(), reloadMilestones()]);
     setTogglingTask(null);
   }
 
@@ -499,72 +509,130 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                       {ms.notes && <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 6, fontStyle: "italic" }}>{ms.notes}</p>}
                     </div>
 
-                    {/* ── Task checklist (expandable) ── */}
-                    {isExpanded && (
-                      <div style={{ background: "#F9FAFB", borderTop: "1px solid var(--border-subtle)", padding: "10px 22px 14px" }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--text-tertiary)", marginBottom: 10 }}>
-                          All Project Tasks — check to assign to this milestone
-                        </div>
-                        {tasks.length === 0 ? (
-                          <div style={{ fontSize: 13, color: "var(--text-tertiary)", padding: "10px 0" }}>No tasks in this project yet. Add tasks first.</div>
-                        ) : (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                            {(tasks as Record<string, unknown>[]).map((t) => {
-                              const taskId = t.id as string;
-                              const isAssignedHere = (t.milestone_id as string | null) === ms.id;
-                              const isAssignedElsewhere = !isAssignedHere && t.milestone_id != null;
-                              const elseMs = isAssignedElsewhere
-                                ? milestones.find(m => m.id === t.milestone_id)?.name
-                                : null;
-                              const assignees = (t.task_assignments as { team_members: { full_name: string } }[] ?? []);
-                              const isToggling = togglingTask === taskId;
+                    {/* ── Task picker (expandable) ── */}
+                    {isExpanded && (() => {
+                      const searchQ = (msTaskSearch[ms.id] ?? "").toLowerCase();
 
-                              return (
-                                <label key={taskId}
-                                  style={{
-                                    display: "flex", alignItems: "center", gap: 10,
-                                    padding: "7px 10px", borderRadius: 7, cursor: isToggling ? "wait" : "pointer",
-                                    background: isAssignedHere ? "#EEF2FF" : isAssignedElsewhere ? "#FFFBEB" : "#fff",
-                                    border: "1px solid " + (isAssignedHere ? "#C7D2FE" : isAssignedElsewhere ? "#FDE68A" : "#E5E7EB"),
-                                    opacity: isToggling ? 0.6 : 1, transition: "all 0.15s",
-                                  }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={isAssignedHere}
-                                    disabled={isToggling}
-                                    onChange={(e) => handleTaskMilestoneToggle(taskId, ms.id, e.target.checked)}
-                                    style={{ accentColor: "#4F46E5", width: 15, height: 15, flexShrink: 0, cursor: "pointer" }}
-                                  />
-                                  {/* status dot */}
-                                  <div style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: t.status === "completed" ? "#059669" : t.status === "in progress" ? "#2563EB" : t.status === "paused" ? "#D97706" : "#9CA3AF" }} />
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name as string}</div>
-                                    {isAssignedElsewhere && elseMs && (
-                                      <div style={{ fontSize: 11, color: "#B45309", fontWeight: 500 }}>Assigned to: {elseMs} — checking will move it here</div>
-                                    )}
-                                  </div>
-                                  <StatusBadge status={t.status as string} />
-                                  <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                                    {assignees.slice(0, 3).map((a, i) => (
-                                      <div key={i} title={a.team_members?.full_name}
-                                        style={{ width: 20, height: 20, borderRadius: "50%", background: "linear-gradient(135deg,#6366F1,#8B5CF6)", color: "#fff", fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                        {a.team_members?.full_name?.charAt(0)?.toUpperCase() ?? "?"}
-                                      </div>
-                                    ))}
-                                  </div>
-                                  <span style={{ fontSize: 11.5, color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>{formatHours(t.estimated_hours as number)}</span>
-                                  {isToggling && <span style={{ fontSize: 11, color: "#4F46E5" }}>saving…</span>}
-                                </label>
-                              );
-                            })}
+                      /* split all tasks into: assigned to this milestone / this project (not ms) / elsewhere */
+                      const thisMsTasks   = allTasks.filter(t => (t as any).milestone_id === ms.id);
+                      const thisProj      = allTasks.filter(t => (t as any).milestone_id !== ms.id && (t as any).project_id === id);
+                      const elsewhere     = allTasks.filter(t => (t as any).milestone_id !== ms.id && (t as any).project_id !== id);
+
+                      /* within each group keep only tasks with ≥1 developer assignment, then apply search */
+                      const withDevs = (list: typeof allTasks) =>
+                        list.filter(t => {
+                          const assignees = ((t as any).assignments ?? (t as any).task_assignments ?? []) as unknown[];
+                          if (assignees.length === 0) return false; // only assigned tasks
+                          if (!searchQ) return true;
+                          return (t.name ?? "").toLowerCase().includes(searchQ) ||
+                            ((t as any).category ?? "").toLowerCase().includes(searchQ);
+                        });
+
+                      const groups: { label: string; accent: string; items: typeof allTasks }[] = [
+                        { label: `In this milestone (${thisMsTasks.length})`,       accent: "#4F46E5", items: withDevs(thisMsTasks) },
+                        { label: `Other tasks in this project (${thisProj.length})`, accent: "#059669", items: withDevs(thisProj) },
+                        { label: `Tasks from other projects (${elsewhere.length})`,  accent: "#D97706", items: withDevs(elsewhere) },
+                      ].filter(g => g.items.length > 0 || (!searchQ && g.label.startsWith("In this")));
+
+                      const total = withDevs(allTasks).length;
+
+                      return (
+                        <div style={{ background: "#F9FAFB", borderTop: "1px solid var(--border-subtle)", padding: "12px 22px 16px" }}>
+                          {/* Search bar */}
+                          <div style={{ position: "relative", marginBottom: 12 }}>
+                            <Search size={12} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", pointerEvents: "none" }} />
+                            <input
+                              autoFocus
+                              value={msTaskSearch[ms.id] ?? ""}
+                              onChange={e => setMsTaskSearch(prev => ({ ...prev, [ms.id]: e.target.value }))}
+                              placeholder="Search tasks by name or category…"
+                              style={{ width: "100%", paddingLeft: 28, paddingRight: 10, height: 32, fontSize: 12.5, border: "1px solid #E5E7EB", borderRadius: 7, outline: "none", background: "#fff" }}
+                            />
+                            {searchQ && (
+                              <button onClick={() => setMsTaskSearch(prev => ({ ...prev, [ms.id]: "" }))}
+                                style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 0 }}>
+                                <X size={12} />
+                              </button>
+                            )}
                           </div>
-                        )}
-                        <div style={{ marginTop: 10, fontSize: 11.5, color: "var(--text-tertiary)" }}>
-                          {assignedCount} task{assignedCount !== 1 ? "s" : ""} assigned to this milestone
-                          {assignedCount > 0 && ` · ${completedCount} completed`}
+
+                          {total === 0 && (
+                            <div style={{ fontSize: 13, color: "var(--text-tertiary)", padding: "8px 0" }}>
+                              {searchQ ? "No matching tasks found." : "No tasks with developer assignments exist yet. Assign developers to tasks on the Tasks page first."}
+                            </div>
+                          )}
+
+                          {groups.map(group => (
+                            <div key={group.label} style={{ marginBottom: 12 }}>
+                              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: group.accent, marginBottom: 5 }}>
+                                {group.label}
+                              </div>
+                              {group.items.length === 0 ? (
+                                <div style={{ fontSize: 12, color: "var(--text-tertiary)", padding: "4px 0" }}>
+                                  {searchQ ? "None match your search." : "No tasks here."}
+                                </div>
+                              ) : (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                                  {group.items.map(t => {
+                                    const taskId = t.id;
+                                    const isAssignedHere = (t as any).milestone_id === ms.id;
+                                    const isAssignedElsewhere = !isAssignedHere && (t as any).milestone_id != null;
+                                    const elseMs = isAssignedElsewhere ? milestones.find(m => m.id === (t as any).milestone_id)?.name : null;
+                                    const assignees = ((t as any).assignments ?? (t as any).task_assignments ?? []) as { team_members?: { full_name: string } }[];
+                                    const isToggling = togglingTask === taskId;
+                                    /* show which project this task belongs to if it's from elsewhere */
+                                    const taskProject = (t as any).project as { name: string } | null | undefined;
+
+                                    return (
+                                      <label key={taskId} style={{
+                                        display: "flex", alignItems: "center", gap: 10,
+                                        padding: "7px 10px", borderRadius: 7, cursor: isToggling ? "wait" : "pointer",
+                                        background: isAssignedHere ? "#EEF2FF" : "#fff",
+                                        border: "1px solid " + (isAssignedHere ? "#C7D2FE" : "#E5E7EB"),
+                                        opacity: isToggling ? 0.6 : 1, transition: "all 0.15s",
+                                      }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={isAssignedHere}
+                                          disabled={isToggling}
+                                          onChange={e => handleTaskMilestoneToggle(taskId, ms.id, e.target.checked)}
+                                          style={{ accentColor: "#4F46E5", width: 15, height: 15, flexShrink: 0, cursor: "pointer" }}
+                                        />
+                                        <div style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: t.status === "completed" ? "#059669" : t.status === "in progress" ? "#2563EB" : t.status === "paused" ? "#D97706" : "#9CA3AF" }} />
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
+                                          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 1, display: "flex", gap: 6 }}>
+                                            {t.category && <span style={{ textTransform: "capitalize" }}>{t.category}</span>}
+                                            {taskProject?.name && <span>· {taskProject.name}</span>}
+                                            {isAssignedElsewhere && elseMs && <span style={{ color: "#B45309" }}>· Currently in "{elseMs}" — will move here</span>}
+                                          </div>
+                                        </div>
+                                        <StatusBadge status={t.status} />
+                                        <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                          {assignees.slice(0, 3).map((a, i) => (
+                                            <div key={i} title={a.team_members?.full_name} style={{ width: 20, height: 20, borderRadius: "50%", background: "linear-gradient(135deg,#6366F1,#8B5CF6)", color: "#fff", fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                              {a.team_members?.full_name?.charAt(0)?.toUpperCase() ?? "?"}
+                                            </div>
+                                          ))}
+                                          {assignees.length > 3 && <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>+{assignees.length - 3}</span>}
+                                        </div>
+                                        <span style={{ fontSize: 11.5, color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>{formatHours(t.estimated_hours)}</span>
+                                        {isToggling && <span style={{ fontSize: 11, color: "#4F46E5" }}>saving…</span>}
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+
+                          <div style={{ marginTop: 6, fontSize: 11.5, color: "var(--text-tertiary)" }}>
+                            {assignedCount} task{assignedCount !== 1 ? "s" : ""} assigned · {completedCount} completed
+                            {searchQ && ` · showing results for "${searchQ}"`}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 );
               })}

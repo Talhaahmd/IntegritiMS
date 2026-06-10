@@ -2,13 +2,12 @@
 import { useState, useRef, useEffect } from "react";
 import TopBar from "@/components/layout/TopBar";
 import { PageLoader } from "@/components/ui/LoadingSpinner";
-import ProgressBar from "@/components/ui/ProgressBar";
 import EmptyState from "@/components/ui/EmptyState";
 import Modal from "@/components/ui/Modal";
 import { useProjects, createProjectRecord, updateProjectRecord } from "@/lib/hooks/useProjects";
 import { useClients } from "@/lib/hooks/useClients";
 import { formatDate, timeAgo } from "@/lib/utils";
-import { FolderKanban, Plus, Search, Clock, Building2, Check, ChevronDown } from "lucide-react";
+import { FolderKanban, Plus, Search, Building2, Check, ChevronDown, Clock } from "lucide-react";
 import Link from "next/link";
 import { Project, PROJECT_STATUSES } from "@/types";
 
@@ -263,15 +262,14 @@ export default function ProjectsPage() {
               action={<button className="btn btn-primary btn-sm" onClick={() => setShowModal(true)}><Plus size={13} /> New Project</button>} />
           ) : (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ minWidth: 980 }}>
+              <table style={{ minWidth: 780 }}>
                 <colgroup>
-                  <col style={{ width: "19%" }} /><col style={{ width: "14%" }} />
-                  <col style={{ width: "12%" }} /><col style={{ width: "10%" }} />
-                  <col style={{ width: "9%" }} /><col style={{ width: "14%" }} />
-                  <col style={{ width: "9%" }} /><col style={{ width: "8%" }} /><col style={{ width: "5%" }} />
+                  <col style={{ width: "24%" }} /><col style={{ width: "18%" }} />
+                  <col style={{ width: "15%" }} /><col style={{ width: "13%" }} />
+                  <col style={{ width: "12%" }} /><col style={{ width: "11%" }} /><col style={{ width: "7%" }} />
                 </colgroup>
                 <thead>
-                  <tr><th>Project</th><th>Client</th><th>Status</th><th>Priority</th><th>Health</th><th>Progress</th><th>Hours</th><th>Due Date</th><th>Updated</th></tr>
+                  <tr><th>Project</th><th>Client</th><th>Status</th><th>Priority</th><th>Health</th><th>Due Date</th><th>Updated</th></tr>
                 </thead>
                 <tbody>
                   {filtered.map((project) => {
@@ -319,15 +317,6 @@ export default function ProjectsPage() {
                             colorMap={HEALTH_COLORS}
                             onSave={(v) => patch(project.id, { health_status: v })}
                           />
-                        </td>
-                        {/* Progress */}
-                        <td><ProgressBar value={project.progress_percent} showLabel /></td>
-                        {/* Hours — auto-sum from tasks (read-only) */}
-                        <td>
-                          <div style={{ fontSize: 13, lineHeight: 1.3 }}>
-                            <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{project.actual_hours}h</span>
-                            <span style={{ color: "var(--text-tertiary)" }}> / {project.estimated_hours}h</span>
-                          </div>
                         </td>
                         {/* Due Date */}
                         <td>
