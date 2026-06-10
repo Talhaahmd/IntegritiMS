@@ -92,20 +92,20 @@ export function useMemberTasks(memberId: string) {
   const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!memberId) return;
-    createClient()
+    const { data: assignments } = await createClient()
       .from("task_assignments")
-      .select("*, tasks(id, name, status, priority, category, expected_end, project_id, projects(name))")
+      .select("*, tasks(id, name, status, priority, category, expected_end, expected_start, actual_hours, estimated_hours, project_id, projects(name))")
       .eq("team_member_id", memberId)
-      .order("created_at", { ascending: false })
-      .then(({ data: assignments }) => {
-        setData((assignments as Record<string, unknown>[]) ?? []);
-        setLoading(false);
-      });
+      .order("created_at", { ascending: false });
+    setData((assignments as Record<string, unknown>[]) ?? []);
+    setLoading(false);
   }, [memberId]);
 
-  return { data, loading };
+  useEffect(() => { load(); }, [load]);
+
+  return { data, loading, reload: load };
 }
 
 export async function createTeamMemberRecord(values: Partial<TeamMember>) {
