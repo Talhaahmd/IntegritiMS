@@ -56,7 +56,7 @@ export function useProjectTasks(projectId: string) {
     setLoading(true);
     const { data: tasks } = await createClient()
       .from("tasks")
-      .select("*, task_assignments(team_members(id, full_name, title))")
+      .select("id, name, status, category, priority, estimated_hours, actual_hours, overdue, milestone_id, expected_start, expected_end, updated_at, description, task_assignments(team_members(id, full_name, title))")
       .eq("project_id", projectId)
       .order("created_at", { ascending: false });
     setData((tasks as Record<string, unknown>[]) ?? []);

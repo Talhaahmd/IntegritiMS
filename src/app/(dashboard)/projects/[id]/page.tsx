@@ -139,6 +139,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [taskSaving, setTaskSaving] = useState(false);
   const [milestoneForm, setMilestoneForm] = useState({ name: "", start_date: "", end_date: "", cost: 0, status: "active" as MilestoneStatus, notes: "" });
   const [milestoneSaving, setMilestoneSaving] = useState(false);
+  /* track which milestone's task panel is expanded */
+  const [expandedMilestone, setExpandedMilestone] = useState<string | null>(null);
+  /* track in-flight task assignment saves */
+  const [togglingTask, setTogglingTask] = useState<string | null>(null);
 
   if (loading || !project) return <><TopBar title="Project" /><PageLoader /></>;
 
@@ -224,6 +228,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     setShowMilestoneModal(false);
     setMilestoneForm({ name: "", start_date: "", end_date: "", cost: 0, status: "active", notes: "" });
     reloadMilestones();
+  }
+
+  /**
+   * Check = assign task to milestone; uncheck = remove from milestone.
+   * If task belonged to a different milestone it is simply reassigned.
+   */
+  async function handleTaskMilestoneToggle(taskId: string, milestoneId: string, checked: boolean) {
+    setTogglingTask(taskId);
+    await createSBClient()
+      .from("tasks")
+      .update({ milestone_id: checked ? milestoneId : null })
+      .eq("id", taskId);
+    await Promise.all([reloadTasks(), reloadMilestones()]);
+    setTogglingTask(null);
   }
 
   const avatarBg = "linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)";
@@ -397,64 +415,156 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           ) : (
             <div style={{ padding: "8px 0" }}>
               {milestones.map((ms) => {
-                const msTasks = (ms.tasks ?? []) as unknown as Record<string, unknown>[];
-                const msCompleted = msTasks.filter(t => t.status === "completed").length;
-                const totalRevenue = ms.cost;
+                /* tasks assigned to THIS milestone (from live tasks list) */
+                const msTaskIds = new Set(
+                  tasks.filter(t => (t as any).milestone_id === ms.id).map(t => (t as any).id as string)
+                );
+                const assignedCount = msTaskIds.size;
+                const completedCount = tasks.filter(t => (t as any).milestone_id === ms.id && (t as any).status === "completed").length;
+                const isExpanded = expandedMilestone === ms.id;
+
                 return (
-                  <div key={ms.id} style={{ borderBottom: "1px solid var(--border-subtle)", padding: "14px 22px" }}>
-                    {/* Milestone header */}
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
-                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: MS_COLORS[ms.status]?.color ?? "#6B7280", flexShrink: 0 }} />
-                        <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ms.name}</div>
-                        <MilestoneStatusDropdown value={ms.status} onSave={async (v) => { await updateMilestoneRecord(ms.id, { status: v }); reloadMilestones(); }} />
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
-                        {ms.start_date && <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{formatDate(ms.start_date, "MMM d")} → {ms.end_date ? formatDate(ms.end_date, "MMM d") : "?"}</span>}
-                        <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: "#059669" }}>
-                          <DollarSign size={13} />
-                          {Number(ms.cost).toLocaleString()}
-                          {ms.is_paid && <span style={{ fontSize: 10, fontWeight: 700, background: "#ECFDF5", color: "#059669", padding: "1px 6px", borderRadius: 4, marginLeft: 2 }}>PAID</span>}
+                  <div key={ms.id} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                    {/* ── Milestone header row ── */}
+                    <div style={{ padding: "14px 22px" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: "50%", background: MS_COLORS[ms.status]?.color ?? "#6B7280", flexShrink: 0 }} />
+                          <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ms.name}</div>
+                          <MilestoneStatusDropdown value={ms.status} onSave={async (v) => { await updateMilestoneRecord(ms.id, { status: v }); reloadMilestones(); }} />
                         </div>
-                        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>
-                          <input type="checkbox" checked={ms.is_paid} onChange={async (e) => { await updateMilestoneRecord(ms.id, { is_paid: e.target.checked }); reloadMilestones(); }} style={{ accentColor: "#4F46E5" }} />
-                          Paid
-                        </label>
-                        <button onClick={async () => { if (confirm("Delete this milestone?")) { await deleteMilestoneRecord(ms.id); reloadMilestones(); } }}
-                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 3, borderRadius: 4 }}
-                          onMouseEnter={e => { e.currentTarget.style.color = "#DC2626"; e.currentTarget.style.background = "#FEF2F2"; }}
-                          onMouseLeave={e => { e.currentTarget.style.color = "var(--text-tertiary)"; e.currentTarget.style.background = "none"; }}>
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </div>
-                    {/* Tasks under milestone */}
-                    {msTasks.length > 0 && (
-                      <div style={{ marginTop: 10, paddingLeft: 18, borderLeft: `2px solid ${MS_COLORS[ms.status]?.color ?? "#E5E7EB"}20` }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 6 }}>
-                          Tasks — {msCompleted}/{msTasks.length} completed
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+                          {ms.start_date && (
+                            <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                              {formatDate(ms.start_date, "MMM d")} → {ms.end_date ? formatDate(ms.end_date, "MMM d") : "?"}
+                            </span>
+                          )}
+                          <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: "#059669" }}>
+                            <DollarSign size={13} />
+                            {Number(ms.cost).toLocaleString()}
+                            {ms.is_paid && <span style={{ fontSize: 10, fontWeight: 700, background: "#ECFDF5", color: "#059669", padding: "1px 6px", borderRadius: 4 }}>PAID</span>}
+                          </div>
+                          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>
+                            <input type="checkbox" checked={ms.is_paid}
+                              onChange={async (e) => { await updateMilestoneRecord(ms.id, { is_paid: e.target.checked }); reloadMilestones(); }}
+                              style={{ accentColor: "#4F46E5" }} />
+                            Paid
+                          </label>
+                          <button onClick={async () => { if (confirm("Delete this milestone?")) { await deleteMilestoneRecord(ms.id); reloadMilestones(); } }}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 3, borderRadius: 4 }}
+                            onMouseEnter={e => { e.currentTarget.style.color = "#DC2626"; e.currentTarget.style.background = "#FEF2F2"; }}
+                            onMouseLeave={e => { e.currentTarget.style.color = "var(--text-tertiary)"; e.currentTarget.style.background = "none"; }}>
+                            <Trash2 size={13} />
+                          </button>
                         </div>
-                        {msTasks.map((t) => {
-                          const assignees = (t.task_assignments as { team_members: { full_name: string } }[] ?? []);
-                          return (
-                            <div key={t.id as string} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", borderBottom: "1px solid var(--border-subtle)" }}>
-                              <div style={{ width: 6, height: 6, borderRadius: "50%", background: t.status === "completed" ? "#059669" : t.status === "in progress" ? "#2563EB" : "#9CA3AF", flexShrink: 0 }} />
-                              <div style={{ flex: 1, fontSize: 13, color: "var(--text-primary)", fontWeight: 500 }}>{t.name as string}</div>
-                              <StatusBadge status={t.status as string} />
-                              <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                                {assignees.slice(0, 3).map((a, i) => (
-                                  <div key={i} title={a.team_members?.full_name} style={{ width: 22, height: 22, borderRadius: "50%", background: "linear-gradient(135deg,#6366F1,#8B5CF6)", color: "#fff", fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                    {a.team_members?.full_name?.charAt(0)?.toUpperCase() ?? "?"}
+                      </div>
+
+                      {/* ── Tasks summary + expand toggle ── */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, paddingTop: 8, borderTop: "1px solid var(--border-subtle)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <CheckSquare size={13} style={{ color: "var(--text-tertiary)" }} />
+                          <span style={{ fontSize: 12.5, color: "var(--text-secondary)", fontWeight: 500 }}>
+                            {assignedCount === 0
+                              ? "No tasks assigned"
+                              : `${completedCount}/${assignedCount} tasks completed`}
+                          </span>
+                          {assignedCount > 0 && (
+                            <div style={{ display: "flex", gap: 3 }}>
+                              {tasks
+                                .filter(t => (t as any).milestone_id === ms.id)
+                                .flatMap(t => (t as any).task_assignments as { team_members: { full_name: string } }[] ?? [])
+                                .reduce<string[]>((acc, a) => {
+                                  const n = a.team_members?.full_name;
+                                  if (n && !acc.includes(n)) acc.push(n);
+                                  return acc;
+                                }, [])
+                                .slice(0, 4)
+                                .map((name, i) => (
+                                  <div key={i} title={name} style={{ width: 20, height: 20, borderRadius: "50%", background: "linear-gradient(135deg,#6366F1,#8B5CF6)", color: "#fff", fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                    {name.charAt(0).toUpperCase()}
                                   </div>
                                 ))}
-                              </div>
-                              <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{formatHours(t.estimated_hours as number)}</span>
                             </div>
-                          );
-                        })}
+                          )}
+                        </div>
+                        <button
+                          onClick={() => setExpandedMilestone(isExpanded ? null : ms.id)}
+                          style={{ display: "flex", alignItems: "center", gap: 5, background: isExpanded ? "#EEF2FF" : "#F3F4F6", border: "1px solid " + (isExpanded ? "#C7D2FE" : "#E5E7EB"), color: isExpanded ? "#4F46E5" : "var(--text-secondary)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12.5, fontWeight: 600 }}>
+                          <CheckSquare size={12} />
+                          {isExpanded ? "Hide tasks" : `Manage tasks (${tasks.length})`}
+                          <ChevronDown size={11} style={{ transform: isExpanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+                        </button>
+                      </div>
+
+                      {ms.notes && <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 6, fontStyle: "italic" }}>{ms.notes}</p>}
+                    </div>
+
+                    {/* ── Task checklist (expandable) ── */}
+                    {isExpanded && (
+                      <div style={{ background: "#F9FAFB", borderTop: "1px solid var(--border-subtle)", padding: "10px 22px 14px" }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--text-tertiary)", marginBottom: 10 }}>
+                          All Project Tasks — check to assign to this milestone
+                        </div>
+                        {tasks.length === 0 ? (
+                          <div style={{ fontSize: 13, color: "var(--text-tertiary)", padding: "10px 0" }}>No tasks in this project yet. Add tasks first.</div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                            {(tasks as Record<string, unknown>[]).map((t) => {
+                              const taskId = t.id as string;
+                              const isAssignedHere = (t.milestone_id as string | null) === ms.id;
+                              const isAssignedElsewhere = !isAssignedHere && t.milestone_id != null;
+                              const elseMs = isAssignedElsewhere
+                                ? milestones.find(m => m.id === t.milestone_id)?.name
+                                : null;
+                              const assignees = (t.task_assignments as { team_members: { full_name: string } }[] ?? []);
+                              const isToggling = togglingTask === taskId;
+
+                              return (
+                                <label key={taskId}
+                                  style={{
+                                    display: "flex", alignItems: "center", gap: 10,
+                                    padding: "7px 10px", borderRadius: 7, cursor: isToggling ? "wait" : "pointer",
+                                    background: isAssignedHere ? "#EEF2FF" : isAssignedElsewhere ? "#FFFBEB" : "#fff",
+                                    border: "1px solid " + (isAssignedHere ? "#C7D2FE" : isAssignedElsewhere ? "#FDE68A" : "#E5E7EB"),
+                                    opacity: isToggling ? 0.6 : 1, transition: "all 0.15s",
+                                  }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isAssignedHere}
+                                    disabled={isToggling}
+                                    onChange={(e) => handleTaskMilestoneToggle(taskId, ms.id, e.target.checked)}
+                                    style={{ accentColor: "#4F46E5", width: 15, height: 15, flexShrink: 0, cursor: "pointer" }}
+                                  />
+                                  {/* status dot */}
+                                  <div style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: t.status === "completed" ? "#059669" : t.status === "in progress" ? "#2563EB" : t.status === "paused" ? "#D97706" : "#9CA3AF" }} />
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name as string}</div>
+                                    {isAssignedElsewhere && elseMs && (
+                                      <div style={{ fontSize: 11, color: "#B45309", fontWeight: 500 }}>Assigned to: {elseMs} — checking will move it here</div>
+                                    )}
+                                  </div>
+                                  <StatusBadge status={t.status as string} />
+                                  <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                    {assignees.slice(0, 3).map((a, i) => (
+                                      <div key={i} title={a.team_members?.full_name}
+                                        style={{ width: 20, height: 20, borderRadius: "50%", background: "linear-gradient(135deg,#6366F1,#8B5CF6)", color: "#fff", fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                        {a.team_members?.full_name?.charAt(0)?.toUpperCase() ?? "?"}
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <span style={{ fontSize: 11.5, color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>{formatHours(t.estimated_hours as number)}</span>
+                                  {isToggling && <span style={{ fontSize: 11, color: "#4F46E5" }}>saving…</span>}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <div style={{ marginTop: 10, fontSize: 11.5, color: "var(--text-tertiary)" }}>
+                          {assignedCount} task{assignedCount !== 1 ? "s" : ""} assigned to this milestone
+                          {assignedCount > 0 && ` · ${completedCount} completed`}
+                        </div>
                       </div>
                     )}
-                    {ms.notes && <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 8, paddingLeft: 18, fontStyle: "italic" }}>{ms.notes}</p>}
                   </div>
                 );
               })}
