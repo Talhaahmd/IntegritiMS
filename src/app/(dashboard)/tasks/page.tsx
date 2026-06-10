@@ -13,6 +13,7 @@ import { formatDate } from "@/lib/utils";
 import {
   CheckSquare, Plus, Search, AlertCircle, Clock, Pause,
   CheckCircle2, Timer, Hash, ChevronDown, Filter, X,
+  Square, Users, Briefcase, ListChecks,
 } from "lucide-react";
 import { Task, TASK_CATEGORIES, TASK_STATUSES, TaskStatus, TaskCategory } from "@/types";
 import { createClient as createSBClient } from "@/lib/supabase/client";
@@ -436,6 +437,229 @@ function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
   );
 }
 
+/* ── BulkAssignModal ── */
+function BulkAssignModal({
+  selectedCount,
+  projects,
+  members,
+  saving,
+  defaultMode = "project",
+  onAssignProject,
+  onAssignDeveloper,
+  onClose,
+}: {
+  selectedCount: number;
+  projects: any[];
+  members: any[];
+  saving: boolean;
+  defaultMode?: "project" | "developer";
+  onAssignProject: (projectId: string, milestoneId: string | null) => void;
+  onAssignDeveloper: (memberId: string) => void;
+  onClose: () => void;
+}) {
+  const [mode, setMode] = useState<"project" | "developer">(defaultMode);
+  const [projectId, setProjectId] = useState("");
+  const [milestoneId, setMilestoneId] = useState<string | null>(null);
+  const [memberId, setMemberId] = useState("");
+  const [milestones, setMilestones] = useState<any[]>([]);
+  const [loadingMs, setLoadingMs] = useState(false);
+  const [projectSearch, setProjectSearch] = useState("");
+  const [memberSearch, setMemberSearch] = useState("");
+
+  useEffect(() => {
+    if (!projectId) { setMilestones([]); setMilestoneId(null); return; }
+    setLoadingMs(true);
+    setMilestoneId(null);
+    createSBClient()
+      .from("milestones")
+      .select("id, name")
+      .eq("project_id", projectId)
+      .then(({ data }) => { setMilestones(data ?? []); setLoadingMs(false); });
+  }, [projectId]);
+
+  const canConfirm = mode === "project" ? !!projectId : !!memberId;
+  const filteredProjects = projects.filter(p => p.name.toLowerCase().includes(projectSearch.toLowerCase()));
+  const filteredMembers = members.filter(m => m.full_name.toLowerCase().includes(memberSearch.toLowerCase()));
+  const selectedProject = projects.find(p => p.id === projectId);
+  const selectedMember = members.find(m => m.id === memberId);
+
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    flex: 1, padding: "10px 0", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer",
+    borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+    background: active ? "var(--accent)" : "transparent",
+    color: active ? "#fff" : "var(--text-secondary)",
+    transition: "all 0.15s",
+  });
+
+  const optionStyle = (selected: boolean): React.CSSProperties => ({
+    padding: "9px 12px", fontSize: 13, fontWeight: selected ? 700 : 500,
+    color: selected ? "var(--accent)" : "var(--text-primary)",
+    background: selected ? "var(--accent)15" : "transparent",
+    cursor: "pointer", display: "flex", alignItems: "center", gap: 8, borderRadius: 7,
+  });
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999,
+      background: "rgba(0,0,0,0.45)", backdropFilter: "blur(3px)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{
+        width: 480, background: "var(--surface)", borderRadius: 18,
+        boxShadow: "0 24px 80px rgba(0,0,0,0.18)", overflow: "hidden",
+      }}>
+        {/* Header */}
+        <div style={{ padding: "20px 22px 16px", borderBottom: "1px solid var(--border-subtle)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-primary)" }}>Bulk Assignment</div>
+              <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 2 }}>
+                Assigning <strong style={{ color: "var(--accent)" }}>{selectedCount}</strong> task{selectedCount !== 1 ? "s" : ""}
+              </div>
+            </div>
+            <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 4 }}><X size={18} /></button>
+          </div>
+        </div>
+
+        {/* Mode tabs */}
+        <div style={{ padding: "14px 22px 0", display: "flex", gap: 6, background: "var(--surface-2)", margin: "0" }}>
+          <button style={tabStyle(mode === "project")} onClick={() => setMode("project")}>
+            <Briefcase size={14} /> Assign to Project
+          </button>
+          <button style={tabStyle(mode === "developer")} onClick={() => setMode("developer")}>
+            <Users size={14} /> Assign to Developer
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "18px 22px" }}>
+          {mode === "project" ? (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Select Project</div>
+              <div style={{ position: "relative", marginBottom: 8 }}>
+                <Search size={12} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" }} />
+                <input
+                  value={projectSearch} onChange={e => setProjectSearch(e.target.value)}
+                  placeholder="Search projects..."
+                  style={{ width: "100%", height: 34, borderRadius: 8, border: "1px solid var(--border)", paddingLeft: 28, paddingRight: 10, fontSize: 13, outline: "none", background: "var(--surface-2)", boxSizing: "border-box" }}
+                />
+              </div>
+              <div style={{ maxHeight: 160, overflowY: "auto", borderRadius: 10, border: "1px solid var(--border-subtle)", padding: "4px" }}>
+                {filteredProjects.length === 0
+                  ? <div style={{ padding: "12px", fontSize: 12, color: "var(--text-tertiary)", textAlign: "center" }}>No projects found</div>
+                  : filteredProjects.map(p => (
+                    <div key={p.id}
+                      onClick={() => setProjectId(p.id)}
+                      style={optionStyle(projectId === p.id)}
+                      onMouseEnter={e => { if (projectId !== p.id) e.currentTarget.style.background = "var(--surface-2)"; }}
+                      onMouseLeave={e => { if (projectId !== p.id) e.currentTarget.style.background = "transparent"; }}
+                    >
+                      {projectId === p.id ? <CheckSquare size={14} style={{ color: "var(--accent)", flexShrink: 0 }} /> : <Square size={14} style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />}
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                    </div>
+                  ))
+                }
+              </div>
+
+              {projectId && (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>
+                    Milestone {loadingMs ? "(loading…)" : milestones.length === 0 ? "(no milestones)" : "(optional)"}
+                  </div>
+                  {milestones.length > 0 && (
+                    <div style={{ borderRadius: 10, border: "1px solid var(--border-subtle)", padding: "4px", maxHeight: 130, overflowY: "auto" }}>
+                      <div
+                        onClick={() => setMilestoneId(null)}
+                        style={optionStyle(milestoneId === null)}
+                        onMouseEnter={e => { if (milestoneId !== null) e.currentTarget.style.background = "var(--surface-2)"; }}
+                        onMouseLeave={e => { if (milestoneId !== null) e.currentTarget.style.background = "transparent"; }}
+                      >
+                        {milestoneId === null ? <CheckSquare size={14} style={{ color: "var(--accent)" }} /> : <Square size={14} style={{ color: "var(--text-tertiary)" }} />}
+                        <span style={{ fontStyle: "italic", color: "var(--text-tertiary)" }}>No milestone</span>
+                      </div>
+                      {milestones.map(ms => (
+                        <div key={ms.id}
+                          onClick={() => setMilestoneId(ms.id)}
+                          style={optionStyle(milestoneId === ms.id)}
+                          onMouseEnter={e => { if (milestoneId !== ms.id) e.currentTarget.style.background = "var(--surface-2)"; }}
+                          onMouseLeave={e => { if (milestoneId !== ms.id) e.currentTarget.style.background = "transparent"; }}
+                        >
+                          {milestoneId === ms.id ? <CheckSquare size={14} style={{ color: "var(--accent)" }} /> : <Square size={14} style={{ color: "var(--text-tertiary)" }} />}
+                          {ms.name}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {selectedProject && (
+                    <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, background: "var(--accent)10", border: "1px solid var(--accent)30", fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>
+                      Will assign to: <strong>{selectedProject.name}</strong>{milestoneId ? ` → ${milestones.find(m => m.id === milestoneId)?.name}` : ""}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Select Developer</div>
+              <div style={{ position: "relative", marginBottom: 8 }}>
+                <Search size={12} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" }} />
+                <input
+                  value={memberSearch} onChange={e => setMemberSearch(e.target.value)}
+                  placeholder="Search team members..."
+                  style={{ width: "100%", height: 34, borderRadius: 8, border: "1px solid var(--border)", paddingLeft: 28, paddingRight: 10, fontSize: 13, outline: "none", background: "var(--surface-2)", boxSizing: "border-box" }}
+                />
+              </div>
+              <div style={{ maxHeight: 200, overflowY: "auto", borderRadius: 10, border: "1px solid var(--border-subtle)", padding: "4px" }}>
+                {filteredMembers.length === 0
+                  ? <div style={{ padding: "12px", fontSize: 12, color: "var(--text-tertiary)", textAlign: "center" }}>No members found</div>
+                  : filteredMembers.map(m => (
+                    <div key={m.id}
+                      onClick={() => setMemberId(m.id)}
+                      style={optionStyle(memberId === m.id)}
+                      onMouseEnter={e => { if (memberId !== m.id) e.currentTarget.style.background = "var(--surface-2)"; }}
+                      onMouseLeave={e => { if (memberId !== m.id) e.currentTarget.style.background = "transparent"; }}
+                    >
+                      <div style={{ width: 26, height: 26, borderRadius: "50%", background: memberId === m.id ? "var(--accent)" : "var(--accent)40", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{m.full_name?.charAt(0)}</div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{m.full_name}</div>
+                        {m.title && <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{m.title}</div>}
+                      </div>
+                      {memberId === m.id && <CheckSquare size={14} style={{ color: "var(--accent)", marginLeft: "auto", flexShrink: 0 }} />}
+                    </div>
+                  ))
+                }
+              </div>
+              {selectedMember && (
+                <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, background: "var(--accent)10", border: "1px solid var(--accent)30", fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>
+                  Will assign to: <strong>{selectedMember.full_name}</strong>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "14px 22px 20px", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <button onClick={onClose} style={{ height: 38, padding: "0 18px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-2)", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "var(--text-secondary)" }}>Cancel</button>
+          <button
+            onClick={() => mode === "project" ? onAssignProject(projectId, milestoneId) : onAssignDeveloper(memberId)}
+            disabled={!canConfirm || saving}
+            style={{
+              height: 38, padding: "0 20px", borderRadius: 10, border: "none",
+              background: canConfirm && !saving ? "var(--accent)" : "var(--border)",
+              color: canConfirm && !saving ? "#fff" : "var(--text-tertiary)",
+              fontSize: 13, fontWeight: 700, cursor: canConfirm && !saving ? "pointer" : "not-allowed",
+              display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            {saving ? "Saving…" : `Assign ${selectedCount} Task${selectedCount !== 1 ? "s" : ""}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main page ── */
 export default function TasksPage() {
   const { data: tasks, loading, reload } = useTasks();
@@ -452,6 +676,13 @@ export default function TasksPage() {
   const [dateTo, setDateTo] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [showModal, setShowModal] = useState(false);
+
+  // bulk select state
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkModalMode, setBulkModalMode] = useState<"project" | "developer">("project");
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   const activeFilterCount = [
     memberFilter !== "all", projectFilter !== "all", dateFrom !== "",
@@ -495,6 +726,58 @@ export default function TasksPage() {
     reload();
   }
 
+  function toggleSelectMode() {
+    setSelectMode(m => !m);
+    setSelectedIds(new Set());
+  }
+
+  function toggleTask(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds(selectedIds.size === filtered.length ? new Set() : new Set(filtered.map(t => t.id)));
+  }
+
+  async function handleBulkAssignProject(projectId: string, milestoneId: string | null) {
+    setBulkSaving(true);
+    const sb = createSBClient();
+    const proj = projects.find(p => p.id === projectId);
+    const update: Record<string, unknown> = { project_id: projectId, client_id: proj?.client_id ?? null };
+    if (milestoneId) update.milestone_id = milestoneId;
+    await Promise.all(Array.from(selectedIds).map(id => sb.from("tasks").update(update).eq("id", id)));
+    setBulkSaving(false);
+    setSelectedIds(new Set());
+    setSelectMode(false);
+    setShowBulkModal(false);
+    reload();
+  }
+
+  async function handleBulkAssignDeveloper(memberId: string) {
+    setBulkSaving(true);
+    const sb = createSBClient();
+    await Promise.all(
+      Array.from(selectedIds).map(async (taskId) => {
+        const task = tasks.find(t => t.id === taskId);
+        await sb.from("task_assignments").delete().eq("task_id", taskId);
+        await sb.from("task_assignments").insert({
+          task_id: taskId, team_member_id: memberId,
+          estimated_hours: task?.estimated_hours ?? 0, actual_hours: 0,
+          status: task?.status ?? "not started",
+        });
+      })
+    );
+    setBulkSaving(false);
+    setSelectedIds(new Set());
+    setSelectMode(false);
+    setShowBulkModal(false);
+    reload();
+  }
+
   if (loading) return <><TopBar title="Tasks" /><PageLoader /></>;
 
   return (
@@ -514,6 +797,18 @@ export default function TasksPage() {
               {activeFilterCount > 0 && (
                 <span style={{ position: "absolute", top: -4, right: -4, width: 16, height: 16, borderRadius: "50%", background: "var(--accent)", color: "#fff", fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{activeFilterCount}</span>
               )}
+            </button>
+            <button
+              onClick={toggleSelectMode}
+              style={{
+                height: 34, padding: "0 12px", gap: 6, fontSize: 13, fontWeight: 600,
+                display: "flex", alignItems: "center", cursor: "pointer",
+                borderRadius: 8, border: selectMode ? "1.5px solid var(--accent)" : "1px solid var(--border)",
+                background: selectMode ? "var(--accent)15" : "var(--surface-2)",
+                color: selectMode ? "var(--accent)" : "var(--text-secondary)",
+              }}
+            >
+              <ListChecks size={13} /> {selectMode ? "Exit Select" : "Select"}
             </button>
             {activeFilterCount > 0 && (
               <button onClick={() => { setStatusFilter("all"); setCategoryFilter("all"); setMemberFilter("all"); setProjectFilter("all"); setDateFrom(""); setDateTo(""); }} style={{ fontSize: 11, color: "var(--text-tertiary)", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
@@ -599,7 +894,8 @@ export default function TasksPage() {
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", tableLayout: "fixed" }}>
                 <colgroup>
-                  <col style={{ width: "18%" }} />
+                  {selectMode && <col style={{ width: "3%" }} />}
+                  <col style={{ width: selectMode ? "16%" : "18%" }} />
                   <col style={{ width: "15%" }} />
                   <col style={{ width: "11%" }} />
                   <col style={{ width: "8%" }} />
@@ -611,6 +907,18 @@ export default function TasksPage() {
                 </colgroup>
                 <thead>
                   <tr>
+                    {selectMode && (
+                      <th style={{ padding: "10px 8px" }}>
+                        <button
+                          onClick={toggleSelectAll}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", display: "flex", padding: 0 }}
+                        >
+                          {selectedIds.size === filtered.length && filtered.length > 0
+                            ? <CheckSquare size={15} style={{ color: "var(--accent)" }} />
+                            : <Square size={15} />}
+                        </button>
+                      </th>
+                    )}
                     <th style={{ padding: "10px 12px" }}>TASK</th>
                     <th style={{ padding: "10px 12px" }}>CLIENT / PROJECT</th>
                     <th style={{ padding: "10px 12px" }}>STATUS</th>
@@ -625,8 +933,18 @@ export default function TasksPage() {
                 <tbody>
                   {filtered.map(task => {
                     const isDone = task.status === "completed";
+                    const isSelected = selectedIds.has(task.id);
                     return (
-                      <tr key={task.id} style={{ opacity: task.status === "paused" ? 0.7 : 1 }}>
+                      <tr key={task.id} style={{ opacity: task.status === "paused" ? 0.7 : 1, background: isSelected ? "var(--accent)08" : undefined }}>
+                        {selectMode && (
+                          <td style={{ padding: "10px 8px" }}>
+                            <button onClick={() => toggleTask(task.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", display: "flex", padding: 0 }}>
+                              {isSelected
+                                ? <CheckSquare size={15} style={{ color: "var(--accent)" }} />
+                                : <Square size={15} />}
+                            </button>
+                          </td>
+                        )}
                         <td style={{ padding: "10px 12px" }}>
                           <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={task.name}>{task.name}</div>
                           <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3 }}>
@@ -679,6 +997,61 @@ export default function TasksPage() {
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Create Task" subtitle="Add a new task to the system" size="lg">
         <TaskForm onSave={() => { setShowModal(false); reload(); }} onClose={() => setShowModal(false)} />
       </Modal>
+
+      {/* Floating bulk action bar */}
+      {selectMode && selectedIds.size > 0 && (
+        <div style={{
+          position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)",
+          zIndex: 500, background: "#1A1A2E", borderRadius: 14,
+          boxShadow: "0 8px 40px rgba(0,0,0,0.32)", padding: "12px 20px",
+          display: "flex", alignItems: "center", gap: 14,
+          border: "1px solid rgba(255,255,255,0.08)",
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", whiteSpace: "nowrap" }}>
+            <span style={{ color: "#818CF8" }}>{selectedIds.size}</span> task{selectedIds.size !== 1 ? "s" : ""} selected
+          </div>
+          <div style={{ width: 1, height: 22, background: "rgba(255,255,255,0.12)" }} />
+          <button
+            onClick={() => { setBulkModalMode("project"); setShowBulkModal(true); }}
+            style={{
+              height: 34, padding: "0 16px", borderRadius: 9, border: "none",
+              background: "#6366F1", color: "#fff", fontSize: 13, fontWeight: 700,
+              cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            <Briefcase size={13} /> Assign to Project
+          </button>
+          <button
+            onClick={() => { setBulkModalMode("developer"); setShowBulkModal(true); }}
+            style={{
+              height: 34, padding: "0 16px", borderRadius: 9, border: "none",
+              background: "#059669", color: "#fff", fontSize: 13, fontWeight: 700,
+              cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            <Users size={13} /> Assign to Developer
+          </button>
+          <button
+            onClick={() => { setSelectedIds(new Set()); setSelectMode(false); }}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.45)", display: "flex", padding: 4 }}
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
+      {showBulkModal && (
+        <BulkAssignModal
+          selectedCount={selectedIds.size}
+          projects={projects}
+          members={members}
+          saving={bulkSaving}
+          defaultMode={bulkModalMode}
+          onAssignProject={handleBulkAssignProject}
+          onAssignDeveloper={handleBulkAssignDeveloper}
+          onClose={() => setShowBulkModal(false)}
+        />
+      )}
     </>
   );
 }
