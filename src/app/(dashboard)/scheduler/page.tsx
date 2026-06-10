@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import TopBar from "@/components/layout/TopBar";
 import { PageLoader } from "@/components/ui/LoadingSpinner";
 import Modal from "@/components/ui/Modal";
@@ -11,14 +11,13 @@ import { useClients } from "@/lib/hooks/useClients";
 import { useProjects } from "@/lib/hooks/useProjects";
 import { createClient as createSBClient } from "@/lib/supabase/client";
 import { format, addDays, startOfWeek, isSameDay, parseISO, addMinutes } from "date-fns";
-import { ChevronLeft, ChevronRight, Plus, Trash2, AlertCircle, Calendar, Clock, User, Building2, FolderKanban } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Trash2, AlertCircle, Calendar, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TASK_CATEGORIES, TaskCategory } from "@/types";
 
-// 5pm (17) to 2am (26 = 2am next day) → 9 hour slots
-const HOUR_WIDTH = 76; // Slightly wider for better readability
-const WORK_HOURS: number[] = [17, 18, 19, 20, 21, 22, 23, 0, 1]; // 5pm → 2am
-const ROW_HEIGHT = 60; // Slightly taller rows
+const HOUR_WIDTH = 76;
+const WORK_HOURS: number[] = [17, 18, 19, 20, 21, 22, 23, 0, 1];
+const ROW_HEIGHT = 60;
 const SIDEBAR_WIDTH = 180;
 
 const COLOR_OPTIONS = [
@@ -27,12 +26,8 @@ const COLOR_OPTIONS = [
 ];
 
 const labelStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: 12,
-  fontWeight: 600,
-  color: "var(--text-secondary)",
-  marginBottom: 5,
-  letterSpacing: "0.01em",
+  display: "block", fontSize: 12, fontWeight: 600,
+  color: "var(--text-secondary)", marginBottom: 5, letterSpacing: "0.01em",
 };
 
 function displayHour(h: number): string {
@@ -57,16 +52,37 @@ function getSlotPos(startDt: string, endDt: string): SlotPos | null {
   return { left: startOff * HOUR_WIDTH, width: Math.max(durationH * HOUR_WIDTH, 40) };
 }
 
+/* Task assignments shown as background blocks */
+interface TaskAssignmentBlock {
+  id: string;
+  team_member_id: string;
+  assigned_start: string;
+  assigned_end: string;
+  tasks?: { id: string; name: string; category: string; status: string };
+}
+
+function useTaskAssignments(rangeStart: string, rangeEnd: string) {
+  const [data, setData] = useState<TaskAssignmentBlock[]>([]);
+
+  const load = useCallback(async () => {
+    const sb = createSBClient();
+    const { data: rows } = await sb
+      .from("task_assignments")
+      .select("id, team_member_id, assigned_start, assigned_end, tasks(id, name, category, status)")
+      .not("assigned_start", "is", null)
+      .not("assigned_end", "is", null)
+      .gte("assigned_end", rangeStart)
+      .lte("assigned_start", rangeEnd);
+    setData((rows ?? []) as unknown as TaskAssignmentBlock[]);
+  }, [rangeStart, rangeEnd]);
+
+  useEffect(() => { load(); }, [load]);
+  return { data, reload: load };
+}
+
 interface QuickAssignForm {
-  client_id: string;
-  project_id: string;
-  task_id: string;
-  task_name: string;
-  category: TaskCategory;
-  priority: string;
-  estimated_hours: number;
-  description: string;
-  color: string;
+  client_id: string; project_id: string; task_id: string; task_name: string;
+  category: TaskCategory; priority: string; estimated_hours: number; description: string; color: string;
 }
 
 export default function SchedulerPage() {
@@ -95,16 +111,19 @@ export default function SchedulerPage() {
     start: rangeStart.toISOString(),
     end: rangeEnd.toISOString(),
   });
+  const { data: taskAssignments, reload: reloadAssignments } = useTaskAssignments(
+    rangeStart.toISOString(),
+    rangeEnd.toISOString()
+  );
   const { data: tasks } = useTasks();
   const { data: clients } = useClients();
   const { data: projects } = useProjects();
 
-  const filteredMembers = memberFilter === "all" ? members : members.filter((m) => m.id === memberFilter);
+  const filteredMembers = memberFilter === "all" ? members : members.filter(m => m.id === memberFilter);
 
   const [form, setForm] = useState<QuickAssignForm>({
     client_id: "", project_id: "", task_id: "", task_name: "",
-    category: "development", priority: "medium",
-    estimated_hours: 2, description: "", color: COLOR_OPTIONS[0],
+    category: "development", priority: "medium", estimated_hours: 2, description: "", color: COLOR_OPTIONS[0],
   });
 
   function getStartEndDt(): { startDt: string; endDt: string; startDisplay: string } | null {
@@ -115,11 +134,7 @@ export default function SchedulerPage() {
     if (nextDay) d.setDate(d.getDate() + 1);
     d.setHours(h, 0, 0, 0);
     const end = addMinutes(d, form.estimated_hours * 60);
-    return {
-      startDt: d.toISOString(),
-      endDt: end.toISOString(),
-      startDisplay: format(d, "EEE MMM d, h:mm a"),
-    };
+    return { startDt: d.toISOString(), endDt: end.toISOString(), startDisplay: format(d, "EEE MMM d, h:mm a") };
   }
 
   function handleSlotClick(memberId: string, hour: number, day: Date) {
@@ -127,14 +142,14 @@ export default function SchedulerPage() {
     setSelectedDate(day);
     setSelectedHour(hour);
     setOverlapError("");
-    setForm((p) => ({ ...p, estimated_hours: 2, task_id: "", task_name: "", client_id: "", project_id: "" }));
+    setForm(p => ({ ...p, estimated_hours: 2, task_id: "", task_name: "", client_id: "", project_id: "" }));
     setShowModal(true);
   }
 
   function checkOverlap(memberId: string, startDt: string, endDt: string): boolean {
     const start = new Date(startDt);
     const end = new Date(endDt);
-    return schedules.some((s) => {
+    return schedules.some(s => {
       if (s.team_member_id !== memberId) return false;
       const sStart = parseISO(s.start_datetime);
       const sEnd = parseISO(s.end_datetime);
@@ -142,8 +157,10 @@ export default function SchedulerPage() {
     });
   }
 
-  const filteredProjects = form.client_id ? projects.filter((p) => p.client_id === form.client_id) : projects;
-  const filteredTasks = form.project_id ? tasks.filter((t) => t.project_id === form.project_id) : form.client_id ? tasks.filter((t) => t.client_id === form.client_id) : tasks;
+  const filteredProjects = form.client_id ? projects.filter(p => p.client_id === form.client_id) : projects;
+  const filteredTasks = form.project_id
+    ? tasks.filter(t => t.project_id === form.project_id)
+    : form.client_id ? tasks.filter(t => t.client_id === form.client_id) : tasks;
 
   async function handleAssign(e: React.FormEvent) {
     e.preventDefault();
@@ -161,17 +178,10 @@ export default function SchedulerPage() {
     let taskId = form.task_id;
     if (!taskId && form.task_name) {
       const { data: newTask } = await createTaskRecord({
-        name: form.task_name,
-        category: form.category,
-        priority: form.priority as any,
-        status: "scheduled",
-        client_id: form.client_id || null,
-        project_id: form.project_id || null,
-        description: form.description || null,
-        estimated_hours: form.estimated_hours,
-        actual_hours: 0,
-        expected_start: startDt,
-        expected_end: endDt,
+        name: form.task_name, category: form.category, priority: form.priority as any,
+        status: "scheduled", client_id: form.client_id || null, project_id: form.project_id || null,
+        description: form.description || null, estimated_hours: form.estimated_hours,
+        actual_hours: 0, expected_start: startDt, expected_end: endDt,
       });
       taskId = (newTask as any)?.id ?? "";
     }
@@ -183,9 +193,13 @@ export default function SchedulerPage() {
     let assignmentId = (existing as any)?.id;
     if (!assignmentId) {
       const { data: newAsgn } = await sb.from("task_assignments").insert({
-        task_id: taskId, team_member_id: selectedMemberId, assigned_start: startDt, assigned_end: endDt, estimated_hours: form.estimated_hours, actual_hours: 0, status: "scheduled",
+        task_id: taskId, team_member_id: selectedMemberId, assigned_start: startDt, assigned_end: endDt,
+        estimated_hours: form.estimated_hours, actual_hours: 0, status: "scheduled",
       }).select().single();
       assignmentId = (newAsgn as any)?.id ?? "";
+    } else {
+      // Update the assigned times
+      await sb.from("task_assignments").update({ assigned_start: startDt, assigned_end: endDt }).eq("id", assignmentId);
     }
 
     if (!assignmentId) { setSaving(false); return; }
@@ -194,6 +208,7 @@ export default function SchedulerPage() {
     setSaving(false);
     setShowModal(false);
     reload();
+    reloadAssignments();
   }
 
   async function handleDelete(id: string) {
@@ -202,21 +217,22 @@ export default function SchedulerPage() {
   }
 
   if (membersLoading || schedulesLoading) return (
-    <>
-      <TopBar title="Task Scheduler" />
-      <PageLoader />
-    </>
+    <><TopBar title="Task Scheduler" /><PageLoader /></>
   );
 
   const activeTimes = showModal ? getStartEndDt() : null;
+
+  // Build a combined set of blocks per member per day
+  // schedules = explicitly scheduled blocks (from schedules table)
+  // taskAssignments = tasks with assigned_start/assigned_end (show as lighter background blocks)
 
   return (
     <>
       <TopBar title="Task Scheduler" subtitle="Visual schedule board · 5pm – 2am" />
 
       <div style={{ padding: "24px 28px 40px" }} className="animate-fade-in">
-        
-        {/* ── Toolbar ── */}
+
+        {/* Toolbar */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 1, padding: 3, borderRadius: 10, background: "var(--surface-2)", border: "1px solid var(--border-subtle)" }}>
@@ -245,12 +261,24 @@ export default function SchedulerPage() {
           </div>
         </div>
 
-        {/* ── Grid Board ── */}
+        {/* Legend */}
+        <div style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: 11, color: "var(--text-tertiary)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 12, height: 12, borderRadius: 3, background: "#6366F115", borderLeft: "3px solid #6366F1" }} />
+            Scheduled block
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 12, height: 12, borderRadius: 3, background: "#10B98115", borderLeft: "3px solid #10B981", borderStyle: "dashed none none dashed" }} />
+            Task assignment (from Tasks page)
+          </div>
+        </div>
+
+        {/* Grid Board */}
         <div className="card-lg" style={{ overflow: "hidden" }}>
           <div style={{ overflowX: "auto" }}>
             <div style={{ minWidth: SIDEBAR_WIDTH + weekDays.length * WORK_HOURS.length * HOUR_WIDTH }}>
-              
-              {/* Grid Header */}
+
+              {/* Header */}
               <div style={{ display: "flex", background: "var(--surface-2)", borderBottom: "1px solid var(--border)" }}>
                 <div style={{ width: SIDEBAR_WIDTH, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", alignItems: "flex-end", padding: "12px 16px", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.08em", position: "sticky", left: 0, zIndex: 20, background: "var(--surface-2)" }}>
                   Developer
@@ -272,10 +300,10 @@ export default function SchedulerPage() {
                 ))}
               </div>
 
-              {/* Grid Body */}
+              {/* Body */}
               {filteredMembers.map(member => (
                 <div key={member.id} style={{ display: "flex", borderBottom: "1px solid var(--border)", background: "#fff" }}>
-                  {/* Dev Sidebar */}
+                  {/* Sidebar */}
                   <div style={{ width: SIDEBAR_WIDTH, height: ROW_HEIGHT, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12, padding: "0 16px", position: "sticky", left: 0, zIndex: 10, background: "#fff" }}>
                     <Avatar name={member.full_name} size="sm" />
                     <div style={{ minWidth: 0 }}>
@@ -284,9 +312,14 @@ export default function SchedulerPage() {
                     </div>
                   </div>
 
-                  {/* Day Slots */}
+                  {/* Day slots */}
                   {weekDays.map(day => {
-                    const dayBlocks = schedules.filter(s => s.team_member_id === member.id && isSameDay(parseISO(s.start_datetime), day));
+                    const daySchedules = schedules.filter(s => s.team_member_id === member.id && isSameDay(parseISO(s.start_datetime), day));
+                    const dayAssignments = taskAssignments.filter(a =>
+                      a.team_member_id === member.id &&
+                      (isSameDay(parseISO(a.assigned_start), day) || isSameDay(parseISO(a.assigned_end), day))
+                    );
+
                     return (
                       <div key={day.toISOString()} style={{ width: WORK_HOURS.length * HOUR_WIDTH, height: ROW_HEIGHT, display: "flex", position: "relative", borderRight: "1px solid var(--border)", background: isSameDay(day, today) ? "rgba(79, 70, 229, 0.02)" : "transparent" }}>
                         {WORK_HOURS.map(h => (
@@ -294,13 +327,45 @@ export default function SchedulerPage() {
                             <Plus size={12} style={{ color: "var(--accent)", opacity: 0 }} className="group-hover:opacity-40" />
                           </div>
                         ))}
-                        {dayBlocks.map(block => {
+
+                        {/* Task assignment blocks (dashed border, lighter) */}
+                        {dayAssignments.map(block => {
+                          const pos = getSlotPos(block.assigned_start, block.assigned_end);
+                          if (!pos) return null;
+                          const task = block.tasks;
+                          return (
+                            <div key={`ta-${block.id}`} style={{
+                              position: "absolute", top: 4, bottom: 4,
+                              left: pos.left + 2, width: pos.width - 4,
+                              background: "#10B98108",
+                              border: "1.5px dashed #10B98155",
+                              borderRadius: 6, padding: "3px 8px",
+                              display: "flex", alignItems: "center",
+                              zIndex: 5, pointerEvents: "none",
+                            }}>
+                              <div style={{ fontSize: 10, fontWeight: 600, color: "#059669", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                {task?.name ?? "Task"}
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {/* Scheduled blocks (solid) */}
+                        {daySchedules.map(block => {
                           const pos = getSlotPos(block.start_datetime, block.end_datetime);
                           if (!pos) return null;
                           const color = block.color_code ?? "#6366F1";
                           const task = (block as any).task_assignment?.tasks;
                           return (
-                            <div key={block.id} style={{ position: "absolute", top: 6, bottom: 6, left: pos.left + 4, width: pos.width - 8, background: `${color}15`, borderLeft: `3px solid ${color}`, borderRadius: 8, padding: "4px 10px", display: "flex", alignItems: "center", gap: 8, zIndex: 10, cursor: "pointer", transition: "all 0.2s", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }} className="hover:shadow-md group/block">
+                            <div key={block.id} style={{
+                              position: "absolute", top: 6, bottom: 6,
+                              left: pos.left + 4, width: pos.width - 8,
+                              background: `${color}15`, borderLeft: `3px solid ${color}`,
+                              borderRadius: 8, padding: "4px 10px",
+                              display: "flex", alignItems: "center", gap: 8,
+                              zIndex: 10, cursor: "pointer",
+                              boxShadow: "0 2px 4px rgba(0,0,0,0.02)",
+                            }} className="hover:shadow-md group/block">
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontSize: 11, fontWeight: 700, color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{task?.name ?? "Task"}</div>
                                 {pos.width > 120 && <div style={{ fontSize: 9, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", marginTop: 1 }}>{task?.category}</div>}
@@ -321,7 +386,6 @@ export default function SchedulerPage() {
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Schedule Task" subtitle={activeTimes?.startDisplay ? `Assigning for ${activeTimes.startDisplay}` : "Pick a time slot and assign a task."} size="lg">
         <form onSubmit={handleAssign} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          
           {/* Dev Selection */}
           <div style={{ padding: "14px 16px", borderRadius: 14, background: "var(--surface-2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12 }}>
             <Avatar name={members.find(m => m.id === selectedMemberId)?.full_name ?? "Pick Developer"} size="sm" />
@@ -403,10 +467,21 @@ export default function SchedulerPage() {
               <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-tertiary)", marginBottom: 12 }}>New Task Details</div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
-                  <TaskFormField label="Task Name" name="task_name" required value={form.task_name} onChange={(_n: string, v: string) => setForm(p => ({ ...p, task_name: v }))} />
+                  <label style={labelStyle}>Task Name <span style={{ color: "#EF4444" }}>*</span></label>
+                  <input className="input-base" required value={form.task_name} onChange={e => setForm(p => ({ ...p, task_name: e.target.value }))} />
                 </div>
-                <TaskFormSelect label="Category" name="category" options={TASK_CATEGORIES.map(c => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) }))} value={form.category} onChange={(_n: string, v: string) => setForm(p => ({ ...p, category: v as any }))} />
-                <TaskFormSelect label="Priority" name="priority" options={["critical","high","medium","low"].map(p => ({ value: p, label: p.charAt(0).toUpperCase() + p.slice(1) }))} value={form.priority} onChange={(_n: string, v: string) => setForm(p => ({ ...p, priority: v }))} />
+                <div>
+                  <label style={labelStyle}>Category</label>
+                  <select className="input-base" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value as any }))}>
+                    {TASK_CATEGORIES.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Priority</label>
+                  <select className="input-base" value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value }))}>
+                    {["critical", "high", "medium", "low"].map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+                  </select>
+                </div>
               </div>
             </div>
           )}
@@ -427,25 +502,5 @@ export default function SchedulerPage() {
         </form>
       </Modal>
     </>
-  );
-}
-
-function TaskFormField({ label, name, required, value, onChange }: any) {
-  return (
-    <div>
-      <label style={labelStyle}>{label}{required && <span style={{ color: "#EF4444", marginLeft: 3 }}>*</span>}</label>
-      <input className="input-base" required={required} value={value} onChange={e => onChange(name, e.target.value)} />
-    </div>
-  );
-}
-
-function TaskFormSelect({ label, name, options, value, onChange }: any) {
-  return (
-    <div>
-      <label style={labelStyle}>{label}</label>
-      <select className="input-base" value={value} onChange={e => onChange(name, e.target.value)}>
-        {options.map((o: any) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-    </div>
   );
 }

@@ -30,40 +30,42 @@ export function useProject(id: string) {
   const [data, setData] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!id) return;
-    createClient()
+    setLoading(true);
+    const { data: p } = await createClient()
       .from("projects")
       .select("*, clients(id, name, company_name, email, phone, contact_person)")
       .eq("id", id)
-      .single()
-      .then(({ data: p }) => {
-        setData(p as Project);
-        setLoading(false);
-      });
+      .single();
+    setData(p as Project);
+    setLoading(false);
   }, [id]);
 
-  return { data, loading };
+  useEffect(() => { load(); }, [load]);
+
+  return { data, loading, reload: load };
 }
 
 export function useProjectTasks(projectId: string) {
   const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!projectId) return;
-    createClient()
+    setLoading(true);
+    const { data: tasks } = await createClient()
       .from("tasks")
       .select("*, task_assignments(team_members(id, full_name, title))")
       .eq("project_id", projectId)
-      .order("created_at", { ascending: false })
-      .then(({ data: tasks }) => {
-        setData((tasks as Record<string, unknown>[]) ?? []);
-        setLoading(false);
-      });
+      .order("created_at", { ascending: false });
+    setData((tasks as Record<string, unknown>[]) ?? []);
+    setLoading(false);
   }, [projectId]);
 
-  return { data, loading };
+  useEffect(() => { load(); }, [load]);
+
+  return { data, loading, reload: load };
 }
 
 export async function createProjectRecord(values: Partial<Project>) {
