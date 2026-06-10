@@ -110,10 +110,32 @@ export type TaskStatus =
   | "delayed"
   | "blocked";
 
+export type MilestoneStatus = "active" | "completed" | "on_hold" | "blocked";
+
+export interface Milestone {
+  id: string;
+  project_id: string | null;
+  client_id: string | null;
+  name: string;
+  start_date: string | null;
+  end_date: string | null;
+  cost: number;
+  status: MilestoneStatus;
+  is_paid: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  // aggregated
+  tasks?: Task[];
+  client?: Client;
+  project?: Project;
+}
+
 export interface Task {
   id: string;
   client_id: string | null;
   project_id: string | null;
+  milestone_id: string | null;
   client?: Client;
   project?: Project;
   name: string;

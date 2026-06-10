@@ -1,5 +1,5 @@
 "use client";
-import { use, useState } from "react";
+import { use, useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import TopBar from "@/components/layout/TopBar";
 import { PageLoader } from "@/components/ui/LoadingSpinner";
@@ -10,13 +10,15 @@ import { useProject, useProjectTasks, updateProjectRecord } from "@/lib/hooks/us
 import { createTaskRecord } from "@/lib/hooks/useTasks";
 import { useClients } from "@/lib/hooks/useClients";
 import { useTeamMembers } from "@/lib/hooks/useTeam";
+import { useMilestones, createMilestoneRecord, updateMilestoneRecord, deleteMilestoneRecord } from "@/lib/hooks/useMilestones";
 import { formatDate, formatHours, timeAgo } from "@/lib/utils";
 import { createClient as createSBClient } from "@/lib/supabase/client";
 import {
   ArrowLeft, Building2, Calendar, CheckSquare, Clock, AlertCircle,
   Users, Activity, Edit3, Save, X, Plus, Settings, ChevronDown,
+  Flag, Trash2, DollarSign, Check,
 } from "lucide-react";
-import { TASK_CATEGORIES, TASK_STATUSES, TaskCategory } from "@/types";
+import { TASK_CATEGORIES, TASK_STATUSES, TaskCategory, Milestone, MilestoneStatus } from "@/types";
 
 const labelStyle: React.CSSProperties = {
   display: "block", fontSize: 12, fontWeight: 600,
@@ -70,6 +72,49 @@ function EditableSelect({ value, options, onSave }: { value: string; options: { 
   );
 }
 
+/* ── Milestone status badge ─────────────────────────────────────── */
+const MS_COLORS: Record<string, { bg: string; color: string }> = {
+  active:    { bg: "#EFF6FF", color: "#2563EB" },
+  completed: { bg: "#ECFDF5", color: "#059669" },
+  on_hold:   { bg: "#FFFBEB", color: "#B45309" },
+  blocked:   { bg: "#FEF2F2", color: "#DC2626" },
+};
+function MilestoneStatusBadge({ status }: { status: string }) {
+  const c = MS_COLORS[status] ?? { bg: "#F3F4F6", color: "#374151" };
+  return <span style={{ display: "inline-flex", alignItems: "center", background: c.bg, color: c.color, borderRadius: 6, padding: "3px 8px", fontSize: 11.5, fontWeight: 600, textTransform: "capitalize" }}>{status.replace("_", " ")}</span>;
+}
+
+/* ── Inline milestone status dropdown ───────────────────────────── */
+function MilestoneStatusDropdown({ value, onSave }: { value: MilestoneStatus; onSave: (v: MilestoneStatus) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    function h(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+  const statuses: MilestoneStatus[] = ["active","completed","on_hold","blocked"];
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+      <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+        <MilestoneStatusBadge status={value} />
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.10)", minWidth: 140, padding: 4 }}>
+          {statuses.map(s => (
+            <button key={s} onClick={() => { onSave(s); setOpen(false); }}
+              style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: s === value ? "#F5F3FF" : "none", border: "none", borderRadius: 6, padding: "6px 10px", cursor: "pointer" }}>
+              <MilestoneStatusBadge status={s} />
+              {s === value && <Check size={12} style={{ marginLeft: "auto", color: "#4F46E5" }} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const projectHook = useProject(id);
@@ -81,13 +126,19 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const reloadTasks = tasksHook.reload;
   const { data: clients } = useClients();
   const { data: members } = useTeamMembers();
+  const milestonesHook = useMilestones({ projectId: id });
+  const milestones = milestonesHook.data;
+  const reloadMilestones = milestonesHook.reload;
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
+  const [showMilestoneModal, setShowMilestoneModal] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
   const [saving, setSaving] = useState(false);
-  const [taskForm, setTaskForm] = useState({ name: "", category: "development" as TaskCategory, priority: "medium", estimated_hours: 0, expected_start: "", expected_end: "", description: "", assignee_id: "" });
+  const [taskForm, setTaskForm] = useState({ name: "", category: "development" as TaskCategory, priority: "medium", estimated_hours: 0, expected_start: "", expected_end: "", description: "", assignee_id: "", milestone_id: "" });
   const [taskSaving, setTaskSaving] = useState(false);
+  const [milestoneForm, setMilestoneForm] = useState({ name: "", start_date: "", end_date: "", cost: 0, status: "active" as MilestoneStatus, notes: "" });
+  const [milestoneSaving, setMilestoneSaving] = useState(false);
 
   if (loading || !project) return <><TopBar title="Project" /><PageLoader /></>;
 
@@ -138,9 +189,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   async function handleCreateTask(e: React.FormEvent) {
     e.preventDefault();
     setTaskSaving(true);
-    const { assignee_id, ...rest } = taskForm;
+    const { assignee_id, milestone_id, ...rest } = taskForm;
     const { data: newTask } = await createTaskRecord({
       ...rest, project_id: id, client_id: p.client_id,
+      milestone_id: milestone_id || null,
       status: "not started" as const, actual_hours: 0,
       priority: rest.priority as any,
       expected_start: rest.expected_start ? new Date(rest.expected_start).toISOString() : null,
@@ -152,8 +204,26 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
     setTaskSaving(false);
     setShowTaskModal(false);
-    setTaskForm({ name: "", category: "development", priority: "medium", estimated_hours: 0, expected_start: "", expected_end: "", description: "", assignee_id: "" });
+    setTaskForm({ name: "", category: "development", priority: "medium", estimated_hours: 0, expected_start: "", expected_end: "", description: "", assignee_id: "", milestone_id: "" });
     reloadTasks();
+    reloadMilestones();
+  }
+
+  async function handleCreateMilestone(e: React.FormEvent) {
+    e.preventDefault();
+    setMilestoneSaving(true);
+    await createMilestoneRecord({
+      ...milestoneForm,
+      project_id: id,
+      client_id: p.client_id,
+      cost: Number(milestoneForm.cost),
+      start_date: milestoneForm.start_date || null,
+      end_date: milestoneForm.end_date || null,
+    });
+    setMilestoneSaving(false);
+    setShowMilestoneModal(false);
+    setMilestoneForm({ name: "", start_date: "", end_date: "", cost: 0, status: "active", notes: "" });
+    reloadMilestones();
   }
 
   const avatarBg = "linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)";
@@ -305,6 +375,104 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           )}
         </div>
 
+        {/* Milestones Section */}
+        <div className="card-lg" style={{ overflow: "hidden", marginTop: 14 }}>
+          <div style={{ padding: "16px 22px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+              Milestones
+              <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", background: "var(--surface-2)", border: "1px solid var(--border)", padding: "1px 8px", borderRadius: 999 }}>{milestones.length}</span>
+            </div>
+            <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5, gap: 5 }} onClick={() => setShowMilestoneModal(true)}>
+              <Plus size={13} /> Add Milestone
+            </button>
+          </div>
+          {milestones.length === 0 ? (
+            <div style={{ padding: "40px 24px", textAlign: "center" }}>
+              <Flag size={28} style={{ color: "var(--text-tertiary)", margin: "0 auto 10px" }} />
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)" }}>No milestones yet</div>
+              <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={() => setShowMilestoneModal(true)}>
+                <Plus size={12} /> Add First Milestone
+              </button>
+            </div>
+          ) : (
+            <div style={{ padding: "8px 0" }}>
+              {milestones.map((ms) => {
+                const msTasks = (ms.tasks ?? []) as unknown as Record<string, unknown>[];
+                const msCompleted = msTasks.filter(t => t.status === "completed").length;
+                const totalRevenue = ms.cost;
+                return (
+                  <div key={ms.id} style={{ borderBottom: "1px solid var(--border-subtle)", padding: "14px 22px" }}>
+                    {/* Milestone header */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
+                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: MS_COLORS[ms.status]?.color ?? "#6B7280", flexShrink: 0 }} />
+                        <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ms.name}</div>
+                        <MilestoneStatusDropdown value={ms.status} onSave={async (v) => { await updateMilestoneRecord(ms.id, { status: v }); reloadMilestones(); }} />
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
+                        {ms.start_date && <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{formatDate(ms.start_date, "MMM d")} → {ms.end_date ? formatDate(ms.end_date, "MMM d") : "?"}</span>}
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: "#059669" }}>
+                          <DollarSign size={13} />
+                          {Number(ms.cost).toLocaleString()}
+                          {ms.is_paid && <span style={{ fontSize: 10, fontWeight: 700, background: "#ECFDF5", color: "#059669", padding: "1px 6px", borderRadius: 4, marginLeft: 2 }}>PAID</span>}
+                        </div>
+                        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>
+                          <input type="checkbox" checked={ms.is_paid} onChange={async (e) => { await updateMilestoneRecord(ms.id, { is_paid: e.target.checked }); reloadMilestones(); }} style={{ accentColor: "#4F46E5" }} />
+                          Paid
+                        </label>
+                        <button onClick={async () => { if (confirm("Delete this milestone?")) { await deleteMilestoneRecord(ms.id); reloadMilestones(); } }}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 3, borderRadius: 4 }}
+                          onMouseEnter={e => { e.currentTarget.style.color = "#DC2626"; e.currentTarget.style.background = "#FEF2F2"; }}
+                          onMouseLeave={e => { e.currentTarget.style.color = "var(--text-tertiary)"; e.currentTarget.style.background = "none"; }}>
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                    {/* Tasks under milestone */}
+                    {msTasks.length > 0 && (
+                      <div style={{ marginTop: 10, paddingLeft: 18, borderLeft: `2px solid ${MS_COLORS[ms.status]?.color ?? "#E5E7EB"}20` }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 6 }}>
+                          Tasks — {msCompleted}/{msTasks.length} completed
+                        </div>
+                        {msTasks.map((t) => {
+                          const assignees = (t.task_assignments as { team_members: { full_name: string } }[] ?? []);
+                          return (
+                            <div key={t.id as string} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+                              <div style={{ width: 6, height: 6, borderRadius: "50%", background: t.status === "completed" ? "#059669" : t.status === "in progress" ? "#2563EB" : "#9CA3AF", flexShrink: 0 }} />
+                              <div style={{ flex: 1, fontSize: 13, color: "var(--text-primary)", fontWeight: 500 }}>{t.name as string}</div>
+                              <StatusBadge status={t.status as string} />
+                              <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                {assignees.slice(0, 3).map((a, i) => (
+                                  <div key={i} title={a.team_members?.full_name} style={{ width: 22, height: 22, borderRadius: "50%", background: "linear-gradient(135deg,#6366F1,#8B5CF6)", color: "#fff", fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                    {a.team_members?.full_name?.charAt(0)?.toUpperCase() ?? "?"}
+                                  </div>
+                                ))}
+                              </div>
+                              <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{formatHours(t.estimated_hours as number)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {ms.notes && <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 8, paddingLeft: 18, fontStyle: "italic" }}>{ms.notes}</p>}
+                  </div>
+                );
+              })}
+              {/* Total cost footer */}
+              <div style={{ padding: "12px 22px", background: "#F9FAFB", display: "flex", justifyContent: "flex-end", gap: 20 }}>
+                <span style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 500 }}>Total Milestone Value:</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: "#059669" }}>
+                  ${milestones.reduce((s, m) => s + Number(m.cost), 0).toLocaleString()}
+                </span>
+                <span style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 500 }}>Paid:</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: "#4F46E5" }}>
+                  ${milestones.filter(m => m.is_paid).reduce((s, m) => s + Number(m.cost), 0).toLocaleString()}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Notes */}
         {p.notes && (
           <div className="card-lg" style={{ padding: "18px 22px", marginTop: 14, background: "#FFFBEB", border: "1px solid #FEF3C7" }}>
@@ -404,6 +572,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               </select>
             </div>
             <div>
+              <label style={labelStyle}>Milestone</label>
+              <select className="input-base" value={taskForm.milestone_id} onChange={e => setTaskForm(p => ({ ...p, milestone_id: e.target.value }))}>
+                <option value="">No milestone</option>
+                {milestones.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+            <div>
               <label style={labelStyle}>Estimated Hours</label>
               <input type="number" className="input-base" value={taskForm.estimated_hours} onChange={e => setTaskForm(p => ({ ...p, estimated_hours: Number(e.target.value) }))} />
             </div>
@@ -423,6 +598,44 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 12, borderTop: "1px solid var(--border-subtle)" }}>
             <button type="button" className="btn btn-secondary" onClick={() => setShowTaskModal(false)}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={taskSaving} style={{ minWidth: 120 }}>{taskSaving ? "Creating…" : "Add Task"}</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Add Milestone Modal */}
+      <Modal open={showMilestoneModal} onClose={() => setShowMilestoneModal(false)} title="Add Milestone" subtitle={`Add a milestone to ${p.name}`} size="md">
+        <form onSubmit={handleCreateMilestone} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label style={labelStyle}>Milestone Name <span style={{ color: "#EF4444" }}>*</span></label>
+              <input className="input-base" required value={milestoneForm.name} onChange={e => setMilestoneForm(p => ({ ...p, name: e.target.value }))} />
+            </div>
+            <div>
+              <label style={labelStyle}>Start Date</label>
+              <input type="date" className="input-base" value={milestoneForm.start_date} onChange={e => setMilestoneForm(p => ({ ...p, start_date: e.target.value }))} />
+            </div>
+            <div>
+              <label style={labelStyle}>End Date</label>
+              <input type="date" className="input-base" value={milestoneForm.end_date} onChange={e => setMilestoneForm(p => ({ ...p, end_date: e.target.value }))} />
+            </div>
+            <div>
+              <label style={labelStyle}>Cost (Client Revenue) <span style={{ color: "#EF4444" }}>*</span></label>
+              <input type="number" min={0} step={0.01} className="input-base" required value={milestoneForm.cost} onChange={e => setMilestoneForm(p => ({ ...p, cost: Number(e.target.value) }))} />
+            </div>
+            <div>
+              <label style={labelStyle}>Status</label>
+              <select className="input-base" value={milestoneForm.status} onChange={e => setMilestoneForm(p => ({ ...p, status: e.target.value as MilestoneStatus }))}>
+                {(["active","completed","on_hold","blocked"] as MilestoneStatus[]).map(s => <option key={s} value={s}>{s.replace("_"," ").replace(/^\w/, c => c.toUpperCase())}</option>)}
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label style={labelStyle}>Notes</label>
+              <textarea className="input-base" rows={2} value={milestoneForm.notes} onChange={e => setMilestoneForm(p => ({ ...p, notes: e.target.value }))} placeholder="Optional notes about this milestone…" />
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 12, borderTop: "1px solid var(--border-subtle)" }}>
+            <button type="button" className="btn btn-secondary" onClick={() => setShowMilestoneModal(false)}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={milestoneSaving} style={{ minWidth: 130 }}>{milestoneSaving ? "Saving…" : "Add Milestone"}</button>
           </div>
         </form>
       </Modal>

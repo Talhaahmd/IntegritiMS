@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   LayoutDashboard, Users, FolderKanban, UserCog, CalendarDays,
   CheckSquare, BarChart3, Settings, ChevronLeft, ChevronRight,
-  Sparkles, UserPlus, LogOut,
+  Sparkles, UserPlus, LogOut, DollarSign,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -18,6 +18,7 @@ const MAIN_NAV = [
   { href: "/team",      icon: UserCog,         label: "Team" },
   { href: "/scheduler", icon: CalendarDays,    label: "Scheduler" },
   { href: "/tasks",     icon: CheckSquare,     label: "Tasks" },
+  { href: "/finance",   icon: DollarSign,      label: "Finance" },
   { href: "/reports",   icon: BarChart3,       label: "Reports" },
   { href: "/users",     icon: UserPlus,        label: "Users" },
   { href: "/ai-manager",icon: Sparkles,        label: "AI Manager", highlight: true },
