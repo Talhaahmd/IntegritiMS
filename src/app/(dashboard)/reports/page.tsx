@@ -16,7 +16,9 @@ import {
 } from "recharts";
 import { Download, BarChart3, Users, FolderKanban, Calendar, Printer, Building2, CheckSquare } from "lucide-react";
 import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import html2canvas from "html2canvas";
+import { Workbook } from "exceljs";
 
 const CHART_COLORS = ["#6366F1","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899","#0EA5E9"];
 
@@ -94,7 +96,262 @@ export default function ReportsPage() {
     { name: "Delayed", value: completedTasks.filter((t) => t.actual_hours > t.estimated_hours * 1.1).length, color: "#EF4444" },
   ];
 
-  async function exportPDF() {
+  function exportTeamReportPDF() {
+    const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 40;
+    let y = 48;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(17);
+    doc.setTextColor(20, 20, 20);
+    doc.text("IntegritiMS — Team Performance Report", margin, y);
+    y += 16;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(110, 110, 110);
+    doc.text(`Generated ${formatDate(new Date(), "EEEE, MMMM d, yyyy")}`, margin, y);
+    y += 20;
+
+    const onTimeOverall = completedTasks.length > 0
+      ? Math.round((completedTasks.filter((t) => t.actual_hours <= t.estimated_hours * 1.1).length / completedTasks.length) * 100)
+      : 0;
+    const healthy = projects.filter((p) => p.health_status === "healthy").length;
+    const atRisk = projects.filter((p) => p.health_status === "at risk").length;
+    const critical = projects.filter((p) => p.health_status === "critical").length;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(20, 20, 20);
+    doc.text("Summary", margin, y);
+    y += 6;
+
+    autoTable(doc, {
+      startY: y,
+      margin: { left: margin, right: margin },
+      theme: "grid",
+      styles: { fontSize: 9, cellPadding: 7, halign: "center", textColor: [20, 20, 20] },
+      head: [["Assigned Tasks", "Completed", "Overdue", "Efficiency (On-Time)", "Project Health (Healthy / At Risk / Critical)"]],
+      body: [[
+        String(tasks.length),
+        String(completedTasks.length),
+        String(overdueTasks.length),
+        `${onTimeOverall}%`,
+        `${healthy} / ${atRisk} / ${critical}`,
+      ]],
+      headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
+      bodyStyles: { fontStyle: "bold" },
+    });
+    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 26;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("Developer Performance Overview", margin, y);
+    y += 6;
+
+    const devRows = memberPerf.map((m) => {
+      const variance = m.mAct - m.mEst;
+      const rate = m.mCompleted > 0 ? Math.round(((m.mCompleted - m.mOverdue) / m.mCompleted) * 100) : 0;
+      return [
+        m.full_name,
+        m.title ?? "—",
+        String(m.mTasks),
+        String(m.mCompleted),
+        String(m.mOverdue),
+        `${m.mEst}h`,
+        `${m.mAct}h`,
+        variance > 0 ? `+${variance.toFixed(1)}h` : `${variance.toFixed(1)}h`,
+        `${rate}%`,
+      ];
+    });
+
+    autoTable(doc, {
+      startY: y,
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 8.5, cellPadding: 5.5 },
+      head: [["Developer", "Role", "Assigned", "Completed", "Overdue", "Est Hrs", "Act Hrs", "Variance", "On-Time"]],
+      body: devRows,
+      headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [248, 249, 251] },
+      didParseCell: (data) => {
+        if (data.section === "body" && data.column.index === 7) {
+          const raw = String(data.cell.raw ?? "");
+          data.cell.styles.textColor = raw.startsWith("+") ? [220, 38, 38] : [5, 150, 105];
+          data.cell.styles.fontStyle = "bold";
+        }
+      },
+    });
+    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 26;
+
+    if (y > pageHeight - 140) {
+      doc.addPage();
+      y = 48;
+    }
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("Developer-to-Developer Task Breakdown & Variance", margin, y);
+    y += 6;
+
+    const taskRows: string[][] = [];
+    members.forEach((m) => {
+      const mTasks = tasks.filter((t) => ((t.assignments ?? []) as { team_member_id: string }[]).some((a) => a.team_member_id === m.id));
+      mTasks.forEach((t) => {
+        const variance = t.actual_hours - t.estimated_hours;
+        taskRows.push([
+          m.full_name,
+          t.name,
+          t.status,
+          `${t.estimated_hours}h`,
+          `${t.actual_hours}h`,
+          variance > 0 ? `+${variance}h` : `${variance}h`,
+        ]);
+      });
+    });
+
+    autoTable(doc, {
+      startY: y,
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 8, cellPadding: 4.5 },
+      head: [["Developer", "Task", "Status", "Est", "Act", "Variance"]],
+      body: taskRows,
+      headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [248, 249, 251] },
+      didParseCell: (data) => {
+        if (data.section === "body" && data.column.index === 5) {
+          const raw = String(data.cell.raw ?? "");
+          data.cell.styles.textColor = raw.startsWith("+") ? [220, 38, 38] : [5, 150, 105];
+          data.cell.styles.fontStyle = "bold";
+        }
+      },
+    });
+    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 26;
+
+    if (y > pageHeight - 140) {
+      doc.addPage();
+      y = 48;
+    }
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("Estimated vs Actual Hours Summary", margin, y);
+    y += 6;
+
+    const hoursRows = memberPerf
+      .slice()
+      .sort((a, b) => (b.mAct - b.mEst) - (a.mAct - a.mEst))
+      .map((m) => {
+        const variance = m.mAct - m.mEst;
+        const utilization = m.mEst > 0 ? Math.round((m.mAct / m.mEst) * 100) : 0;
+        return [
+          m.full_name,
+          `${m.mEst}h`,
+          `${m.mAct}h`,
+          variance > 0 ? `+${variance.toFixed(1)}h` : `${variance.toFixed(1)}h`,
+          `${utilization}%`,
+        ];
+      });
+
+    autoTable(doc, {
+      startY: y,
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 9, cellPadding: 5.5 },
+      head: [["Developer", "Estimated Hours", "Actual Hours", "Variance", "Utilization"]],
+      body: hoursRows,
+      headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [248, 249, 251] },
+      didParseCell: (data) => {
+        if (data.section === "body" && data.column.index === 3) {
+          const raw = String(data.cell.raw ?? "");
+          data.cell.styles.textColor = raw.startsWith("+") ? [220, 38, 38] : [5, 150, 105];
+          data.cell.styles.fontStyle = "bold";
+        }
+      },
+    });
+
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text(`IntegritiMS · Team Performance Report · Page ${i} of ${pageCount}`, margin, pageHeight - 20);
+      doc.text(formatDate(new Date(), "yyyy-MM-dd"), pageWidth - margin, pageHeight - 20, { align: "right" });
+    }
+
+    doc.save(`IntegritiMS-team-report-${formatDate(new Date(), "yyyy-MM-dd")}.pdf`);
+  }
+
+  async function exportTeamTasksWorkbook() {
+    const workbook = new Workbook();
+    workbook.creator = "IntegritiMS";
+    workbook.created = new Date();
+
+    const usedNames = new Set<string>();
+    members.forEach((m) => {
+      const mTasks = tasks.filter((t) => ((t.assignments ?? []) as { team_member_id: string }[]).some((a) => a.team_member_id === m.id));
+
+      let sheetName = m.full_name.replace(/[\\/*?:[\]]/g, "").trim().slice(0, 31) || "Developer";
+      if (usedNames.has(sheetName)) {
+        let suffix = 2;
+        while (usedNames.has(`${sheetName.slice(0, 28)} (${suffix})`)) suffix++;
+        sheetName = `${sheetName.slice(0, 28)} (${suffix})`;
+      }
+      usedNames.add(sheetName);
+
+      const sheet = workbook.addWorksheet(sheetName);
+      sheet.columns = [
+        { header: "Task Name", key: "task", width: 38 },
+        { header: "Status", key: "status", width: 16 },
+        { header: "Priority", key: "priority", width: 12 },
+        { header: "Est Time (h)", key: "est", width: 14 },
+        { header: "Act Time (h)", key: "act", width: 14 },
+        { header: "Variance (h)", key: "variance", width: 14 },
+      ];
+      const headerRow = sheet.getRow(1);
+      headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
+      headerRow.alignment = { vertical: "middle" };
+
+      if (mTasks.length === 0) {
+        sheet.addRow({ task: "No tasks assigned", status: "", priority: "", est: "", act: "", variance: "" });
+      } else {
+        mTasks.forEach((t) => {
+          const variance = t.actual_hours - t.estimated_hours;
+          const row = sheet.addRow({
+            task: t.name,
+            status: t.status,
+            priority: t.priority,
+            est: t.estimated_hours,
+            act: t.actual_hours,
+            variance,
+          });
+          row.getCell("variance").font = { bold: true, color: { argb: variance > 0 ? "FFDC2626" : "FF059669" } };
+        });
+      }
+
+      sheet.getColumn("task").alignment = { wrapText: true, vertical: "middle" };
+      sheet.views = [{ state: "frozen", ySplit: 1 }];
+    });
+
+    if (workbook.worksheets.length === 0) {
+      workbook.addWorksheet("Team");
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `IntegritiMS-team-tasks-by-developer-${formatDate(new Date(), "yyyy-MM-dd")}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function exportScreenshotPDF() {
     const el = reportRef.current;
     if (!el) return;
     const canvas = await html2canvas(el, { scale: 1.5, useCORS: true, backgroundColor: "#ffffff" });
@@ -102,6 +359,15 @@ export default function ReportsPage() {
     const pdf = new jsPDF({ orientation: "portrait", unit: "px", format: [canvas.width / 1.5, canvas.height / 1.5] });
     pdf.addImage(imgData, "PNG", 0, 0, canvas.width / 1.5, canvas.height / 1.5);
     pdf.save(`IntegritiMS-${reportType}-report-${formatDate(new Date(), "yyyy-MM-dd")}.pdf`);
+  }
+
+  async function exportPDF() {
+    if (reportType === "team") {
+      exportTeamReportPDF();
+      await exportTeamTasksWorkbook();
+      return;
+    }
+    await exportScreenshotPDF();
   }
 
   if (loading) return (
@@ -152,7 +418,14 @@ export default function ReportsPage() {
               <option value="all_time">All Time</option>
             </select>
             <button className="btn btn-secondary" style={{ height: 36, fontSize: 13, gap: 6 }} onClick={() => window.print()}><Printer size={14} /> Print</button>
-            <button className="btn btn-primary" style={{ height: 36, fontSize: 13, gap: 6 }} onClick={exportPDF}><Download size={14} /> Export PDF</button>
+            <button
+              className="btn btn-primary"
+              style={{ height: 36, fontSize: 13, gap: 6 }}
+              onClick={exportPDF}
+              title={reportType === "team" ? "Downloads the team PDF report plus an Excel workbook (one sheet per developer)" : "Download PDF report"}
+            >
+              <Download size={14} /> {reportType === "team" ? "Export PDF + Excel" : "Export PDF"}
+            </button>
           </div>
         </div>
 
