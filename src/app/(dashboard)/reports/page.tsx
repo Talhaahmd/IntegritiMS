@@ -5,11 +5,13 @@ import { PageLoader } from "@/components/ui/LoadingSpinner";
 import { StatusBadge, PriorityBadge } from "@/components/ui/StatusBadge";
 import ProgressBar from "@/components/ui/ProgressBar";
 import Avatar from "@/components/ui/Avatar";
+import Modal from "@/components/ui/Modal";
 import { useTeamMembers } from "@/lib/hooks/useTeam";
 import { useClients } from "@/lib/hooks/useClients";
 import { useProjects } from "@/lib/hooks/useProjects";
 import { useTasks } from "@/lib/hooks/useTasks";
-import { formatDate, formatHours } from "@/lib/utils";
+import { formatDate, formatDateTime, formatHours } from "@/lib/utils";
+import type { Task } from "@/types";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line, Legend,
@@ -23,6 +25,39 @@ import { Workbook } from "exceljs";
 const CHART_COLORS = ["#6366F1","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899","#0EA5E9"];
 
 type ReportType = "individual" | "team" | "client" | "project" | "weekly";
+
+function isoDate(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
+function taskReferenceDate(t: Task): Date {
+  const raw = t.actual_end || t.actual_start || t.expected_end || t.expected_start || t.created_at;
+  return new Date(raw);
+}
+
+function isTaskInRange(t: Task, start: string, end: string): boolean {
+  const ref = taskReferenceDate(t);
+  const startDate = new Date(`${start}T00:00:00`);
+  const endDate = new Date(`${end}T23:59:59`);
+  return ref >= startDate && ref <= endDate;
+}
+
+async function loadLogoPngDataUrl(): Promise<string | null> {
+  try {
+    const res = await fetch("/logo.webp");
+    const blob = await res.blob();
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(bitmap, 0, 0);
+    return canvas.toDataURL("image/png");
+  } catch {
+    return null;
+  }
+}
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
@@ -56,20 +91,30 @@ export default function ReportsPage() {
   const [dateFilter, setDateFilter] = useState("this_month");
   const reportRef = useRef<HTMLDivElement>(null);
 
+  const today = new Date();
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportGenerating, setExportGenerating] = useState(false);
+  const [exportStart, setExportStart] = useState(isoDate(new Date(today.getFullYear(), today.getMonth(), 1)));
+  const [exportEnd, setExportEnd] = useState(isoDate(today));
+
   const loading = ml || cl || pl || tl;
 
   // Computed metrics
   const completedTasks = tasks.filter((t) => t.status === "completed");
   const overdueTasks = tasks.filter((t) => t.overdue);
 
-  const memberPerf = members.map((m) => {
-    const mTasks = tasks.filter((t) => ((t.assignments ?? []) as { team_member_id: string }[]).some((a) => a.team_member_id === m.id));
-    const mCompleted = mTasks.filter((t) => t.status === "completed").length;
-    const mOverdue = mTasks.filter((t) => t.overdue).length;
-    const mEst = mTasks.reduce((s, t) => s + t.estimated_hours, 0);
-    const mAct = mTasks.reduce((s, t) => s + t.actual_hours, 0);
-    return { ...m, mTasks: mTasks.length, mCompleted, mOverdue, mEst, mAct };
-  }).sort((a, b) => b.mCompleted - a.mCompleted);
+  function computeMemberPerf(taskList: Task[]) {
+    return members.map((m) => {
+      const mTasks = taskList.filter((t) => ((t.assignments ?? []) as { team_member_id: string }[]).some((a) => a.team_member_id === m.id));
+      const mCompleted = mTasks.filter((t) => t.status === "completed").length;
+      const mOverdue = mTasks.filter((t) => t.overdue).length;
+      const mEst = mTasks.reduce((s, t) => s + t.estimated_hours, 0);
+      const mAct = mTasks.reduce((s, t) => s + t.actual_hours, 0);
+      return { ...m, mTasks: mTasks.length, mCompleted, mOverdue, mEst, mAct, taskList: mTasks };
+    }).sort((a, b) => b.mCompleted - a.mCompleted);
+  }
+
+  const memberPerf = computeMemberPerf(tasks);
 
   const projectHealth = [
     { name: "Healthy", value: projects.filter((p) => p.health_status === "healthy").length, color: "#10B981" },
@@ -96,26 +141,46 @@ export default function ReportsPage() {
     { name: "Delayed", value: completedTasks.filter((t) => t.actual_hours > t.estimated_hours * 1.1).length, color: "#EF4444" },
   ];
 
-  function exportTeamReportPDF() {
+  function exportTeamReportPDF(filteredTasks: Task[], perf: ReturnType<typeof computeMemberPerf>, start: string, end: string, logoDataUrl: string | null) {
     const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const margin = 40;
-    let y = 48;
+    let y = 42;
+
+    const periodLabel = `${formatDate(new Date(`${start}T00:00:00`))} – ${formatDate(new Date(`${end}T00:00:00`))}`;
+
+    if (logoDataUrl) {
+      doc.addImage(logoDataUrl, "PNG", margin, y - 22, 30, 30);
+    }
+    const textX = logoDataUrl ? margin + 40 : margin;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(15);
+    doc.setTextColor(20, 20, 20);
+    doc.text("IntegritiMS", textX, y - 6);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10.5);
+    doc.setTextColor(90, 90, 90);
+    doc.text("Team Performance Report", textX, y + 9);
+    y += 32;
+
+    doc.setDrawColor(228, 228, 228);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 18;
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(17);
-    doc.setTextColor(20, 20, 20);
-    doc.text("IntegritiMS — Team Performance Report", margin, y);
-    y += 16;
+    doc.setFontSize(9);
+    doc.setTextColor(70, 70, 70);
+    doc.text(`Report Period: ${periodLabel}`, margin, y);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(110, 110, 110);
-    doc.text(`Generated ${formatDate(new Date(), "EEEE, MMMM d, yyyy")}`, margin, y);
-    y += 20;
+    doc.setTextColor(130, 130, 130);
+    doc.text(`Generated: ${formatDateTime(new Date())}`, pageWidth - margin, y, { align: "right" });
+    y += 22;
 
-    const onTimeOverall = completedTasks.length > 0
-      ? Math.round((completedTasks.filter((t) => t.actual_hours <= t.estimated_hours * 1.1).length / completedTasks.length) * 100)
+    const completed = filteredTasks.filter((t) => t.status === "completed");
+    const overdue = filteredTasks.filter((t) => t.overdue);
+    const onTimeOverall = completed.length > 0
+      ? Math.round((completed.filter((t) => t.actual_hours <= t.estimated_hours * 1.1).length / completed.length) * 100)
       : 0;
     const healthy = projects.filter((p) => p.health_status === "healthy").length;
     const atRisk = projects.filter((p) => p.health_status === "at risk").length;
@@ -134,23 +199,29 @@ export default function ReportsPage() {
       styles: { fontSize: 9, cellPadding: 7, halign: "center", textColor: [20, 20, 20] },
       head: [["Assigned Tasks", "Completed", "Overdue", "Efficiency (On-Time)", "Project Health (Healthy / At Risk / Critical)"]],
       body: [[
-        String(tasks.length),
-        String(completedTasks.length),
-        String(overdueTasks.length),
+        String(filteredTasks.length),
+        String(completed.length),
+        String(overdue.length),
         `${onTimeOverall}%`,
         `${healthy} / ${atRisk} / ${critical}`,
       ]],
       headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
       bodyStyles: { fontStyle: "bold" },
     });
-    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 26;
+    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4;
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(7.5);
+    doc.setTextColor(150, 150, 150);
+    doc.text("Project health reflects current status and is not limited to the selected period.", margin, y);
+    y += 22;
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
+    doc.setTextColor(20, 20, 20);
     doc.text("Developer Performance Overview", margin, y);
     y += 6;
 
-    const devRows = memberPerf.map((m) => {
+    const devRows = perf.map((m) => {
       const variance = m.mAct - m.mEst;
       const rate = m.mCompleted > 0 ? Math.round(((m.mCompleted - m.mOverdue) / m.mCompleted) * 100) : 0;
       return [
@@ -182,63 +253,64 @@ export default function ReportsPage() {
         }
       },
     });
-    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 26;
+    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 28;
 
-    if (y > pageHeight - 140) {
-      doc.addPage();
-      y = 48;
-    }
+    // ── Per-developer task breakdown & variance ──
+    perf.forEach((m) => {
+      if (y > pageHeight - 150) {
+        doc.addPage();
+        y = 48;
+      }
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text("Developer-to-Developer Task Breakdown & Variance", margin, y);
-    y += 6;
+      doc.setFillColor(243, 244, 246);
+      doc.rect(margin, y - 14, pageWidth - margin * 2, 24, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.setTextColor(20, 20, 20);
+      doc.text(m.full_name, margin + 8, y + 2);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(110, 110, 110);
+      doc.text(`${m.title ?? "—"}  ·  ${m.mTasks} task${m.mTasks === 1 ? "" : "s"} in period`, pageWidth - margin - 8, y + 2, { align: "right" });
+      y += 22;
 
-    const taskRows: string[][] = [];
-    members.forEach((m) => {
-      const mTasks = tasks.filter((t) => ((t.assignments ?? []) as { team_member_id: string }[]).some((a) => a.team_member_id === m.id));
-      mTasks.forEach((t) => {
+      const rows = m.taskList.map((t) => {
         const variance = t.actual_hours - t.estimated_hours;
-        taskRows.push([
-          m.full_name,
-          t.name,
-          t.status,
-          `${t.estimated_hours}h`,
-          `${t.actual_hours}h`,
-          variance > 0 ? `+${variance}h` : `${variance}h`,
-        ]);
+        return [t.name, t.status, t.priority, `${t.estimated_hours}h`, `${t.actual_hours}h`, variance > 0 ? `+${variance}h` : `${variance}h`];
       });
+
+      autoTable(doc, {
+        startY: y,
+        margin: { left: margin, right: margin },
+        styles: { fontSize: 8, cellPadding: 4.5 },
+        head: [["Task", "Status", "Priority", "Est", "Act", "Variance"]],
+        body: rows.length ? rows : [["No tasks in this period", "—", "—", "—", "—", "—"]],
+        headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: "bold" },
+        alternateRowStyles: { fillColor: [248, 249, 251] },
+        didParseCell: (data) => {
+          if (data.section === "body" && data.column.index === 5) {
+            const raw = String(data.cell.raw ?? "");
+            if (raw.startsWith("+")) data.cell.styles.textColor = [220, 38, 38];
+            else if (raw !== "—") data.cell.styles.textColor = [5, 150, 105];
+            data.cell.styles.fontStyle = "bold";
+          }
+        },
+      });
+      y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 26;
     });
 
-    autoTable(doc, {
-      startY: y,
-      margin: { left: margin, right: margin },
-      styles: { fontSize: 8, cellPadding: 4.5 },
-      head: [["Developer", "Task", "Status", "Est", "Act", "Variance"]],
-      body: taskRows,
-      headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: "bold" },
-      alternateRowStyles: { fillColor: [248, 249, 251] },
-      didParseCell: (data) => {
-        if (data.section === "body" && data.column.index === 5) {
-          const raw = String(data.cell.raw ?? "");
-          data.cell.styles.textColor = raw.startsWith("+") ? [220, 38, 38] : [5, 150, 105];
-          data.cell.styles.fontStyle = "bold";
-        }
-      },
-    });
-    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 26;
-
-    if (y > pageHeight - 140) {
+    if (y > pageHeight - 150) {
       doc.addPage();
       y = 48;
     }
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
+    doc.setTextColor(20, 20, 20);
     doc.text("Estimated vs Actual Hours Summary", margin, y);
     y += 6;
 
-    const hoursRows = memberPerf
+    const hoursRows = perf
       .slice()
       .sort((a, b) => (b.mAct - b.mEst) - (a.mAct - a.mEst))
       .map((m) => {
@@ -276,22 +348,61 @@ export default function ReportsPage() {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
       doc.setTextColor(150, 150, 150);
-      doc.text(`IntegritiMS · Team Performance Report · Page ${i} of ${pageCount}`, margin, pageHeight - 20);
+      doc.text(`IntegritiMS · Team Performance Report · ${periodLabel} · Page ${i} of ${pageCount}`, margin, pageHeight - 20);
       doc.text(formatDate(new Date(), "yyyy-MM-dd"), pageWidth - margin, pageHeight - 20, { align: "right" });
     }
 
-    doc.save(`IntegritiMS-team-report-${formatDate(new Date(), "yyyy-MM-dd")}.pdf`);
+    doc.save(`IntegritiMS-team-report-${start}_to_${end}.pdf`);
   }
 
-  async function exportTeamTasksWorkbook() {
+  async function exportTeamTasksWorkbook(filteredTasks: Task[], perf: ReturnType<typeof computeMemberPerf>, start: string, end: string, logoDataUrl: string | null) {
     const workbook = new Workbook();
     workbook.creator = "IntegritiMS";
     workbook.created = new Date();
 
-    const usedNames = new Set<string>();
-    members.forEach((m) => {
-      const mTasks = tasks.filter((t) => ((t.assignments ?? []) as { team_member_id: string }[]).some((a) => a.team_member_id === m.id));
+    const periodLabel = `${formatDate(new Date(`${start}T00:00:00`))} – ${formatDate(new Date(`${end}T00:00:00`))}`;
+    const generatedLabel = formatDateTime(new Date());
 
+    // ── Summary sheet ──
+    const summary = workbook.addWorksheet("Summary");
+    summary.columns = [
+      { key: "a", width: 24 }, { key: "b", width: 16 }, { key: "c", width: 12 },
+      { key: "d", width: 12 }, { key: "e", width: 12 }, { key: "f", width: 12 },
+      { key: "g", width: 12 }, { key: "h", width: 12 }, { key: "i", width: 12 },
+    ];
+
+    if (logoDataUrl) {
+      const imageId = workbook.addImage({ base64: logoDataUrl.split(",")[1], extension: "png" });
+      summary.addImage(imageId, { tl: { col: 0, row: 0 }, ext: { width: 40, height: 40 } });
+    }
+    summary.mergeCells("B1:E1");
+    summary.getCell("B1").value = "IntegritiMS — Team Performance Report";
+    summary.getCell("B1").font = { bold: true, size: 14 };
+    summary.mergeCells("B2:E2");
+    summary.getCell("B2").value = `Period: ${periodLabel}`;
+    summary.getCell("B2").font = { size: 10, color: { argb: "FF6B7280" } };
+    summary.mergeCells("B3:E3");
+    summary.getCell("B3").value = `Generated: ${generatedLabel}`;
+    summary.getCell("B3").font = { size: 10, color: { argb: "FF6B7280" } };
+
+    const summaryHeaderRow = summary.getRow(5);
+    summaryHeaderRow.values = ["Developer", "Role", "Assigned", "Completed", "Overdue", "Est Hrs", "Act Hrs", "Variance", "On-Time"];
+    summaryHeaderRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    summaryHeaderRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
+
+    perf.forEach((m, i) => {
+      const variance = m.mAct - m.mEst;
+      const rate = m.mCompleted > 0 ? Math.round(((m.mCompleted - m.mOverdue) / m.mCompleted) * 100) : 0;
+      const row = summary.getRow(6 + i);
+      row.values = [m.full_name, m.title ?? "—", m.mTasks, m.mCompleted, m.mOverdue, m.mEst, m.mAct, variance, rate / 100];
+      row.getCell(8).font = { bold: true, color: { argb: variance > 0 ? "FFDC2626" : "FF059669" } };
+      row.getCell(9).numFmt = "0%";
+    });
+    summary.views = [{ state: "frozen", ySplit: 5 }];
+
+    // ── Per-developer sheets ──
+    const usedNames = new Set<string>();
+    perf.forEach((m) => {
       let sheetName = m.full_name.replace(/[\\/*?:[\]]/g, "").trim().slice(0, 31) || "Developer";
       if (usedNames.has(sheetName)) {
         let suffix = 2;
@@ -302,49 +413,48 @@ export default function ReportsPage() {
 
       const sheet = workbook.addWorksheet(sheetName);
       sheet.columns = [
-        { header: "Task Name", key: "task", width: 38 },
-        { header: "Status", key: "status", width: 16 },
-        { header: "Priority", key: "priority", width: 12 },
-        { header: "Est Time (h)", key: "est", width: 14 },
-        { header: "Act Time (h)", key: "act", width: 14 },
-        { header: "Variance (h)", key: "variance", width: 14 },
+        { key: "task", width: 38 },
+        { key: "status", width: 16 },
+        { key: "priority", width: 12 },
+        { key: "est", width: 14 },
+        { key: "act", width: 14 },
+        { key: "variance", width: 14 },
       ];
-      const headerRow = sheet.getRow(1);
+
+      sheet.mergeCells("A1:F1");
+      sheet.getCell("A1").value = `${m.full_name} — ${m.title ?? "—"}`;
+      sheet.getCell("A1").font = { bold: true, size: 13 };
+      sheet.mergeCells("A2:F2");
+      sheet.getCell("A2").value = `Period: ${periodLabel}`;
+      sheet.getCell("A2").font = { size: 9.5, color: { argb: "FF6B7280" } };
+
+      const headerRow = sheet.getRow(4);
+      headerRow.values = ["Task Name", "Status", "Priority", "Est Time (h)", "Act Time (h)", "Variance (h)"];
       headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
       headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
       headerRow.alignment = { vertical: "middle" };
 
-      if (mTasks.length === 0) {
-        sheet.addRow({ task: "No tasks assigned", status: "", priority: "", est: "", act: "", variance: "" });
+      if (m.taskList.length === 0) {
+        sheet.getRow(5).values = ["No tasks in this period", "", "", "", "", ""];
       } else {
-        mTasks.forEach((t) => {
+        m.taskList.forEach((t, idx) => {
           const variance = t.actual_hours - t.estimated_hours;
-          const row = sheet.addRow({
-            task: t.name,
-            status: t.status,
-            priority: t.priority,
-            est: t.estimated_hours,
-            act: t.actual_hours,
-            variance,
-          });
-          row.getCell("variance").font = { bold: true, color: { argb: variance > 0 ? "FFDC2626" : "FF059669" } };
+          const row = sheet.getRow(5 + idx);
+          row.values = [t.name, t.status, t.priority, t.estimated_hours, t.actual_hours, variance];
+          row.getCell(6).font = { bold: true, color: { argb: variance > 0 ? "FFDC2626" : "FF059669" } };
         });
       }
 
-      sheet.getColumn("task").alignment = { wrapText: true, vertical: "middle" };
-      sheet.views = [{ state: "frozen", ySplit: 1 }];
+      sheet.getColumn(1).alignment = { wrapText: true, vertical: "middle" };
+      sheet.views = [{ state: "frozen", ySplit: 4 }];
     });
-
-    if (workbook.worksheets.length === 0) {
-      workbook.addWorksheet("Team");
-    }
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `IntegritiMS-team-tasks-by-developer-${formatDate(new Date(), "yyyy-MM-dd")}.xlsx`;
+    a.download = `IntegritiMS-team-tasks-by-developer-${start}_to_${end}.xlsx`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -361,13 +471,27 @@ export default function ReportsPage() {
     pdf.save(`IntegritiMS-${reportType}-report-${formatDate(new Date(), "yyyy-MM-dd")}.pdf`);
   }
 
-  async function exportPDF() {
+  function exportPDF() {
     if (reportType === "team") {
-      exportTeamReportPDF();
-      await exportTeamTasksWorkbook();
+      setShowExportModal(true);
       return;
     }
-    await exportScreenshotPDF();
+    void exportScreenshotPDF();
+  }
+
+  async function handleGenerateTeamExport() {
+    if (!exportStart || !exportEnd || exportStart > exportEnd) return;
+    setExportGenerating(true);
+    try {
+      const filteredTasks = tasks.filter((t) => isTaskInRange(t, exportStart, exportEnd));
+      const perf = computeMemberPerf(filteredTasks);
+      const logoDataUrl = await loadLogoPngDataUrl();
+      exportTeamReportPDF(filteredTasks, perf, exportStart, exportEnd, logoDataUrl);
+      await exportTeamTasksWorkbook(filteredTasks, perf, exportStart, exportEnd, logoDataUrl);
+      setShowExportModal(false);
+    } finally {
+      setExportGenerating(false);
+    }
   }
 
   if (loading) return (
@@ -699,6 +823,64 @@ export default function ReportsPage() {
           {/* Client & Project views can be similarly polished if needed, but keeping it concise for now */}
         </div>
       </div>
+
+      <Modal
+        open={showExportModal}
+        onClose={() => !exportGenerating && setShowExportModal(false)}
+        title="Export Team Report"
+        subtitle="Choose the date range to include in the PDF and Excel export."
+        size="sm"
+        footer={
+          <>
+            <button className="btn btn-secondary" style={{ height: 36, fontSize: 13 }} onClick={() => setShowExportModal(false)} disabled={exportGenerating}>
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              style={{ height: 36, fontSize: 13, gap: 6 }}
+              onClick={handleGenerateTeamExport}
+              disabled={exportGenerating || !exportStart || !exportEnd || exportStart > exportEnd}
+            >
+              <Download size={14} /> {exportGenerating ? "Generating…" : "Generate Report"}
+            </button>
+          </>
+        }
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-tertiary)", marginBottom: 6, display: "block" }}>
+              Start Date
+            </label>
+            <input
+              type="date"
+              className="input-base"
+              style={{ width: "100%", height: 38 }}
+              value={exportStart}
+              max={exportEnd || undefined}
+              onChange={(e) => setExportStart(e.target.value)}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-tertiary)", marginBottom: 6, display: "block" }}>
+              End Date
+            </label>
+            <input
+              type="date"
+              className="input-base"
+              style={{ width: "100%", height: 38 }}
+              value={exportEnd}
+              min={exportStart || undefined}
+              onChange={(e) => setExportEnd(e.target.value)}
+            />
+          </div>
+          {exportStart && exportEnd && exportStart > exportEnd && (
+            <div style={{ fontSize: 12, color: "#DC2626", fontWeight: 600 }}>Start date must be before end date.</div>
+          )}
+          <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
+            Includes all tasks with activity in this window, a developer performance overview, a per-developer task &amp; variance breakdown, and an estimated vs. actual hours summary — plus a companion Excel workbook with one sheet per developer.
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }
