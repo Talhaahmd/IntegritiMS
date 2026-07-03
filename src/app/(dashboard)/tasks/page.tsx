@@ -13,7 +13,7 @@ import { formatDate } from "@/lib/utils";
 import {
   CheckSquare, Plus, Search, AlertCircle, Clock, Pause,
   CheckCircle2, Timer, Hash, ChevronDown, Filter, X,
-  Square, Users, Briefcase, ListChecks,
+  Square, Users, Briefcase, ListChecks, Trash2,
 } from "lucide-react";
 import { Task, TASK_CATEGORIES, TASK_STATUSES, TaskStatus, TaskCategory } from "@/types";
 import { createClient as createSBClient } from "@/lib/supabase/client";
@@ -907,6 +907,9 @@ export default function TasksPage() {
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkModalMode, setBulkModalMode] = useState<"project" | "developer">("project");
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
 
   const activeFilterCount = [
     memberFilter !== "all", projectFilter !== "all", dateFrom !== "",
@@ -1013,6 +1016,24 @@ export default function TasksPage() {
     setSelectedIds(new Set());
     setSelectMode(false);
     setShowBulkModal(false);
+    reload();
+  }
+
+  async function handleBulkDelete() {
+    setBulkDeleting(true);
+    setBulkDeleteError(null);
+    const sb = createSBClient();
+    // A single bulk delete on `tasks` is enough — task_assignments and schedules
+    // both cascade-delete (ON DELETE CASCADE) from the task_id/task_assignment_id FKs.
+    const { error } = await sb.from("tasks").delete().in("id", Array.from(selectedIds));
+    setBulkDeleting(false);
+    if (error) {
+      setBulkDeleteError(error.message || "Failed to delete tasks. Please try again.");
+      return;
+    }
+    setSelectedIds(new Set());
+    setSelectMode(false);
+    setShowBulkDeleteModal(false);
     reload();
   }
 
@@ -1269,6 +1290,16 @@ export default function TasksPage() {
             <Users size={13} /> Assign to Developer
           </button>
           <button
+            onClick={() => { setBulkDeleteError(null); setShowBulkDeleteModal(true); }}
+            style={{
+              height: 34, padding: "0 16px", borderRadius: 9, border: "none",
+              background: "#DC2626", color: "#fff", fontSize: 13, fontWeight: 700,
+              cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            <Trash2 size={13} /> Delete
+          </button>
+          <button
             onClick={() => { setSelectedIds(new Set()); setSelectMode(false); }}
             style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.45)", display: "flex", padding: 4 }}
           >
@@ -1289,6 +1320,39 @@ export default function TasksPage() {
           onClose={() => setShowBulkModal(false)}
         />
       )}
+
+      <Modal
+        open={showBulkDeleteModal}
+        onClose={() => { if (!bulkDeleting) setShowBulkDeleteModal(false); }}
+        title="Delete Tasks"
+        subtitle={`${selectedIds.size} task${selectedIds.size !== 1 ? "s" : ""} selected`}
+        size="sm"
+        footer={
+          <>
+            <button className="btn btn-secondary" style={{ height: 36, fontSize: 13 }} onClick={() => setShowBulkDeleteModal(false)} disabled={bulkDeleting}>
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              style={{ height: 36, fontSize: 13, gap: 6, background: "#DC2626", borderColor: "#DC2626" }}
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+            >
+              <Trash2 size={14} /> {bulkDeleting ? "Deleting…" : `Delete ${selectedIds.size} Task${selectedIds.size !== 1 ? "s" : ""}`}
+            </button>
+          </>
+        }
+      >
+        <div style={{ fontSize: 13.5, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+          This will permanently delete <strong>{selectedIds.size}</strong> task{selectedIds.size !== 1 ? "s" : ""}, along with
+          their assignments and any scheduled time slots. This action cannot be undone.
+        </div>
+        {bulkDeleteError && (
+          <div style={{ marginTop: 12, fontSize: 12.5, fontWeight: 600, color: "#DC2626", background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 8, padding: "8px 12px" }}>
+            {bulkDeleteError}
+          </div>
+        )}
+      </Modal>
     </>
   );
 }
