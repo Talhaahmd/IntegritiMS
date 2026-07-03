@@ -149,11 +149,60 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
 
 function StatusCell({ task, onUpdate }: { task: Task; onUpdate: () => void }) {
   const [saving, setSaving] = useState(false);
+  const [completeStep, setCompleteStep] = useState<"ask" | "manual" | null>(null);
+  const [manualHours, setManualHours] = useState("");
   const sc = STATUS_COLORS[task.status] ?? STATUS_COLORS["not started"];
 
-  async function handleSelect(newStatus: TaskStatus) {
+  async function finalizeCompletion(actualHours: number) {
     setSaving(true);
     const sb = createSBClient();
+    const now = new Date();
+    const varianceHours = Math.round((actualHours - task.estimated_hours) * 100) / 100;
+    await updateTaskRecord(task.id, {
+      status: "completed",
+      actual_end: now.toISOString(),
+      actual_hours: actualHours,
+      variance_hours: varianceHours,
+    });
+    // Mirror onto task_assignments so team member stats stay in sync
+    await sb.from("task_assignments").update({
+      status: "completed",
+      actual_end: now.toISOString(),
+      actual_hours: actualHours,
+      variance_hours: varianceHours,
+    }).eq("task_id", task.id);
+    setSaving(false);
+    setCompleteStep(null);
+    setManualHours("");
+    onUpdate();
+  }
+
+  function handleAutoComplete() {
+    // No → calculate actual time from actual_start (or expected_start) to now
+    const now = new Date();
+    const startRef = task.actual_start || task.expected_start;
+    let actualHours = task.actual_hours ?? 0;
+    if (startRef) {
+      const diffMs = now.getTime() - new Date(startRef).getTime();
+      actualHours = Math.round((diffMs / 3_600_000) * 100) / 100;
+    }
+    finalizeCompletion(actualHours);
+  }
+
+  function handleManualSubmit() {
+    // Yes → use the actual time the admin manually entered
+    const hours = parseFloat(manualHours);
+    if (isNaN(hours) || hours < 0) return;
+    finalizeCompletion(hours);
+  }
+
+  async function handleSelect(newStatus: TaskStatus) {
+    if (newStatus === "completed") {
+      setCompleteStep("ask");
+      return;
+    }
+
+    setSaving(true);
 
     if (newStatus === "paused" && task.status !== "paused") {
       const marker = `[PAUSED_AT:${new Date().toISOString()}]`;
@@ -178,31 +227,6 @@ function StatusCell({ task, onUpdate }: { task: Task; onUpdate: () => void }) {
       // First time starting — stamp actual_start
       await updateTaskRecord(task.id, { status: "in progress", actual_start: new Date().toISOString() });
 
-    } else if (newStatus === "completed") {
-      // Auto-calculate actual_hours from actual_start (or expected_start) → now
-      const now = new Date();
-      const startRef = task.actual_start || task.expected_start;
-      let actualHours = task.actual_hours ?? 0;
-      let varianceHours = task.variance_hours ?? 0;
-      if (startRef) {
-        const diffMs = now.getTime() - new Date(startRef).getTime();
-        actualHours = Math.round((diffMs / 3_600_000) * 100) / 100;
-        varianceHours = Math.round((actualHours - task.estimated_hours) * 100) / 100;
-      }
-      await updateTaskRecord(task.id, {
-        status: "completed",
-        actual_end: now.toISOString(),
-        actual_hours: actualHours,
-        variance_hours: varianceHours,
-      });
-      // Mirror onto task_assignments so team member stats stay in sync
-      await sb.from("task_assignments").update({
-        status: "completed",
-        actual_end: now.toISOString(),
-        actual_hours: actualHours,
-        variance_hours: varianceHours,
-      }).eq("task_id", task.id);
-
     } else {
       await updateTaskRecord(task.id, { status: newStatus });
     }
@@ -211,23 +235,75 @@ function StatusCell({ task, onUpdate }: { task: Task; onUpdate: () => void }) {
   }
 
   return (
-    <InlineDropdown width={150} trigger={
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 20, background: sc.bg, color: sc.color, fontSize: 11, fontWeight: 700, cursor: "pointer", border: `1px solid ${sc.color}22`, opacity: saving ? 0.6 : 1 }}>
-        {task.status.charAt(0).toUpperCase() + task.status.slice(1)}<ChevronDown size={10} />
-      </div>
-    }>
-      {TASK_STATUSES.map(s => {
-        const c = STATUS_COLORS[s] ?? STATUS_COLORS["not started"];
-        return (
-          <div key={s} onClick={() => handleSelect(s)} style={{ padding: "8px 12px", fontSize: 12, fontWeight: 600, color: c.color, cursor: "pointer", background: task.status === s ? c.bg : "transparent" }}
-            onMouseEnter={e => (e.currentTarget.style.background = c.bg)}
-            onMouseLeave={e => (e.currentTarget.style.background = task.status === s ? c.bg : "transparent")}
-          >
-            {s.charAt(0).toUpperCase() + s.slice(1)}
+    <>
+      <InlineDropdown width={150} trigger={
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 20, background: sc.bg, color: sc.color, fontSize: 11, fontWeight: 700, cursor: "pointer", border: `1px solid ${sc.color}22`, opacity: saving ? 0.6 : 1 }}>
+          {task.status.charAt(0).toUpperCase() + task.status.slice(1)}<ChevronDown size={10} />
+        </div>
+      }>
+        {TASK_STATUSES.map(s => {
+          const c = STATUS_COLORS[s] ?? STATUS_COLORS["not started"];
+          return (
+            <div key={s} onClick={() => handleSelect(s)} style={{ padding: "8px 12px", fontSize: 12, fontWeight: 600, color: c.color, cursor: "pointer", background: task.status === s ? c.bg : "transparent" }}
+              onMouseEnter={e => (e.currentTarget.style.background = c.bg)}
+              onMouseLeave={e => (e.currentTarget.style.background = task.status === s ? c.bg : "transparent")}
+            >
+              {s.charAt(0).toUpperCase() + s.slice(1)}
+            </div>
+          );
+        })}
+      </InlineDropdown>
+
+      <Modal
+        open={completeStep !== null}
+        onClose={() => { if (!saving) { setCompleteStep(null); setManualHours(""); } }}
+        title="Mark Task as Completed"
+        subtitle={task.name}
+        size="sm"
+        footer={completeStep === "ask" ? (
+          <>
+            <button className="btn btn-secondary" style={{ height: 36, fontSize: 13 }} onClick={handleAutoComplete} disabled={saving}>
+              No — use elapsed time
+            </button>
+            <button className="btn btn-primary" style={{ height: 36, fontSize: 13 }} onClick={() => setCompleteStep("manual")} disabled={saving}>
+              Yes — enter manually
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="btn btn-secondary" style={{ height: 36, fontSize: 13 }} onClick={() => setCompleteStep("ask")} disabled={saving}>
+              Back
+            </button>
+            <button className="btn btn-primary" style={{ height: 36, fontSize: 13 }} onClick={handleManualSubmit} disabled={saving || manualHours === ""}>
+              {saving ? "Saving…" : "Save"}
+            </button>
+          </>
+        )}
+      >
+        {completeStep === "ask" && (
+          <div style={{ fontSize: 13.5, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+            Do you want to manually enter the actual time taken to complete this task?
+            Estimated time was <strong>{task.estimated_hours}h</strong>. If not, the system will
+            calculate the actual time from when the task started to right now.
           </div>
-        );
-      })}
-    </InlineDropdown>
+        )}
+        {completeStep === "manual" && (
+          <div>
+            <label style={labelStyle}>Actual Time Taken (hours)</label>
+            <input
+              type="number" step="0.25" min="0" autoFocus
+              className="input-base"
+              placeholder="e.g. 0.75 for 45 minutes, 1.5 for 1h 30m"
+              value={manualHours}
+              onChange={e => setManualHours(e.target.value)}
+            />
+            <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginTop: 8 }}>
+              Estimated: {task.estimated_hours}h. Variance will be calculated automatically (actual − estimated).
+            </div>
+          </div>
+        )}
+      </Modal>
+    </>
   );
 }
 
@@ -300,6 +376,59 @@ function EditableNumberCell({ value, onChange, label }: { value: number; onChang
       onMouseEnter={e => (e.currentTarget.style.border = "1px dashed var(--border)")}
       onMouseLeave={e => (e.currentTarget.style.border = "1px dashed transparent")}
     >{value}h</div>
+  );
+}
+
+/* ── Editable text cell ── */
+function EditableTextCell({ value, onChange, label }: { value: string; onChange: (v: string) => Promise<void>; label: string }) {
+  const [editing, setEditing] = useState(false);
+  const [local, setLocal] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function startEdit() { setLocal(value); setEditing(true); setTimeout(() => inputRef.current?.focus(), 0); }
+  async function commit() { setEditing(false); if (local.trim() && local !== value) await onChange(local.trim()); }
+
+  if (editing) return (
+    <input ref={inputRef} value={local} onChange={e => setLocal(e.target.value)} onBlur={commit}
+      onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
+      style={{ width: "100%", fontSize: 13, fontWeight: 700, border: "1px solid var(--accent)", borderRadius: 5, padding: "3px 6px", outline: "none", background: "var(--surface)" }} />
+  );
+  return (
+    <div onClick={startEdit} title={`Click to edit ${label}`}
+      style={{ fontWeight: 700, fontSize: 13, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer", padding: "2px 6px", borderRadius: 5, border: "1px dashed transparent" }}
+      onMouseEnter={e => (e.currentTarget.style.border = "1px dashed var(--border)")}
+      onMouseLeave={e => (e.currentTarget.style.border = "1px dashed transparent")}
+    >{value}</div>
+  );
+}
+
+/* ── Editable date/time cell ── */
+function toDatetimeLocal(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function EditableDateCell({ value, onChange, label, alertColor }: { value: string | null; onChange: (v: string) => Promise<void>; label: string; alertColor?: string }) {
+  const [editing, setEditing] = useState(false);
+  const [local, setLocal] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function startEdit() { setLocal(toDatetimeLocal(value)); setEditing(true); setTimeout(() => inputRef.current?.focus(), 0); }
+  async function commit() { setEditing(false); if (local && local !== toDatetimeLocal(value)) await onChange(local); }
+
+  if (editing) return (
+    <input ref={inputRef} type="datetime-local" value={local} onChange={e => setLocal(e.target.value)} onBlur={commit}
+      onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
+      style={{ width: "100%", fontSize: 11.5, border: "1px solid var(--accent)", borderRadius: 5, padding: "2px 4px", outline: "none", background: "var(--surface)" }} />
+  );
+  return (
+    <div onClick={startEdit} title={`Click to edit ${label}`}
+      style={{ fontSize: 11.5, color: alertColor ?? "var(--text-secondary)", fontWeight: alertColor ? 700 : 400, whiteSpace: "nowrap", cursor: "pointer", padding: "2px 6px", borderRadius: 5, border: "1px dashed transparent" }}
+      onMouseEnter={e => (e.currentTarget.style.border = "1px dashed var(--border)")}
+      onMouseLeave={e => (e.currentTarget.style.border = "1px dashed transparent")}
+    >{value ? formatDate(value) : "—"}</div>
   );
 }
 
@@ -412,14 +541,14 @@ function TaskForm({ onSave, onClose }: { onSave: () => void; onClose: () => void
     const { assignee_id, ...taskData } = form;
     const { data: newTask } = await createTaskRecord({
       ...taskData,
-      status: "not started" as TaskStatus,
+      status: "in progress" as TaskStatus,
       actual_hours: 0,
       variance_hours: 0,
       client_id: form.client_id || null,
       project_id: form.project_id || null,
       expected_start: expectedStart,
       expected_end: expectedEnd,
-      actual_start: null,
+      actual_start: expectedStart,
       actual_end: null,
     } as Partial<Task>);
     if (newTask && assignee_id) {
@@ -429,9 +558,10 @@ function TaskForm({ onSave, onClose }: { onSave: () => void; onClose: () => void
         estimated_hours: form.estimated_hours,
         actual_hours: 0,
         variance_hours: 0,
-        status: "not started",
+        status: "in progress",
         assigned_start: expectedStart,
         assigned_end: expectedEnd,
+        actual_start: expectedStart,
       });
     }
     setSaving(false);
@@ -468,6 +598,10 @@ function TaskForm({ onSave, onClose }: { onSave: () => void; onClose: () => void
               {previewEnd}
             </div>
           )}
+          <div>
+            <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>Status:</span>{" "}
+            In Progress
+          </div>
         </div>
       </div>
       <div>
@@ -782,11 +916,23 @@ export default function TasksPage() {
     return matchSearch && matchStatus && matchCat && matchMember && matchProject && matchDateFrom && matchDateTo;
   });
 
+  async function handleUpdateName(task: Task, val: string) {
+    await updateTaskRecord(task.id, { name: val });
+    reload();
+  }
+
   async function handleUpdateStart(task: Task, val: string) {
     if (!val) return;
     const iso = new Date(val).toISOString();
     const newEnd = task.estimated_hours ? addHours(iso, task.estimated_hours) : task.expected_end;
     await updateTaskRecord(task.id, { expected_start: iso, expected_end: newEnd ?? undefined });
+    reload();
+  }
+
+  async function handleUpdateEnd(task: Task, val: string) {
+    if (!val) return;
+    const iso = new Date(val).toISOString();
+    await updateTaskRecord(task.id, { expected_end: iso });
     reload();
   }
 
@@ -1027,7 +1173,7 @@ export default function TasksPage() {
                           </td>
                         )}
                         <td style={{ padding: "10px 12px" }}>
-                          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={task.name}>{task.name}</div>
+                          <EditableTextCell label="task name" value={task.name} onChange={v => handleUpdateName(task, v)} />
                           <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3 }}>
                             <span style={{ fontSize: 9, fontWeight: 700, background: "var(--surface-2)", color: "var(--text-secondary)", textTransform: "capitalize", padding: "1px 6px", borderRadius: 3 }}>{task.category}</span>
                             {task.overdue && !isDone && <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, fontWeight: 800, color: "#DC2626", textTransform: "uppercase" }}><AlertCircle size={10} /> Overdue</span>}
@@ -1049,24 +1195,16 @@ export default function TasksPage() {
                           <EditableNumberCell label="estimated hours" value={task.estimated_hours} onChange={v => handleUpdateEstHours(task, v)} />
                         </td>
                         <td style={{ padding: "10px 12px" }}>
-                          {isDone ? (
-                            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
-                              <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-primary)" }}>{task.actual_hours}h</span>
-                              <VarianceBadge variance={task.variance_hours} />
-                            </div>
-                          ) : (
+                          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
                             <EditableNumberCell label="actual hours" value={task.actual_hours} onChange={v => handleUpdateActualHours(task, v)} />
-                          )}
-                        </td>
-                        <td style={{ padding: "10px 12px" }}>
-                          <div style={{ fontSize: 11.5, color: "var(--text-secondary)" }}>
-                            {task.expected_start ? formatDate(task.expected_start) : "—"}
+                            <VarianceBadge variance={task.variance_hours} />
                           </div>
                         </td>
                         <td style={{ padding: "10px 12px" }}>
-                          <div style={{ fontSize: 11.5, color: task.overdue && !isDone ? "#DC2626" : "var(--text-secondary)", fontWeight: task.overdue && !isDone ? 700 : 400, whiteSpace: "nowrap" }}>
-                            {task.expected_end ? formatDate(task.expected_end) : "—"}
-                          </div>
+                          <EditableDateCell label="start date" value={task.expected_start} onChange={v => handleUpdateStart(task, v)} />
+                        </td>
+                        <td style={{ padding: "10px 12px" }}>
+                          <EditableDateCell label="due date" value={task.expected_end} onChange={v => handleUpdateEnd(task, v)} alertColor={task.overdue && !isDone ? "#DC2626" : undefined} />
                           {task.status === "paused" && <div style={{ fontSize: 9, color: "#7C3AED", fontWeight: 600, marginTop: 2 }}>⏸ Frozen</div>}
                         </td>
                       </tr>
@@ -1075,7 +1213,7 @@ export default function TasksPage() {
                 </tbody>
               </table>
               <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-tertiary)", borderTop: "1px solid var(--border-subtle)" }}>
-                Showing {filtered.length} of {tasks.length} tasks · Click status, assignee, client/project, or est. hours to edit inline · Actual hours &amp; variance auto-calculated on completion
+                Showing {filtered.length} of {tasks.length} tasks · Click any field — name, status, assignee, client/project, hours, or dates — to edit inline, even after completion · Marking a task Completed will ask whether to enter the actual time manually or calculate it from elapsed time
               </div>
             </div>
           )}

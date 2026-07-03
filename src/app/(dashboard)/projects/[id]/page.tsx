@@ -200,17 +200,25 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     e.preventDefault();
     setTaskSaving(true);
     const { assignee_id, milestone_id, ...rest } = taskForm;
+    const expectedStart = rest.expected_start ? new Date(rest.expected_start).toISOString() : new Date().toISOString();
+    // Starts immediately (no start date picked, or a past/now date) → begin "in progress"; a future start date stays "not started" until then.
+    const startsNow = new Date(expectedStart).getTime() <= Date.now();
+    const initialStatus = startsNow ? ("in progress" as const) : ("not started" as const);
     const { data: newTask } = await createTaskRecord({
       ...rest, project_id: id, client_id: p.client_id,
       milestone_id: milestone_id || null,
-      status: "not started" as const, actual_hours: 0,
+      status: initialStatus, actual_hours: 0,
       priority: rest.priority as any,
-      expected_start: rest.expected_start ? new Date(rest.expected_start).toISOString() : null,
+      expected_start: expectedStart,
       expected_end: rest.expected_end ? new Date(rest.expected_end).toISOString() : null,
+      actual_start: startsNow ? expectedStart : null,
       estimated_hours: Number(rest.estimated_hours),
     });
     if (newTask && assignee_id) {
-      await createSBClient().from("task_assignments").insert({ task_id: (newTask as any).id, team_member_id: assignee_id, estimated_hours: Number(rest.estimated_hours), actual_hours: 0, status: "not started" });
+      await createSBClient().from("task_assignments").insert({
+        task_id: (newTask as any).id, team_member_id: assignee_id, estimated_hours: Number(rest.estimated_hours),
+        actual_hours: 0, status: initialStatus, assigned_start: expectedStart, actual_start: startsNow ? expectedStart : null,
+      });
     }
     setTaskSaving(false);
     setShowTaskModal(false);
