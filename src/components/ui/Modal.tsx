@@ -1,5 +1,6 @@
 "use client";
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 interface ModalProps {
@@ -25,9 +26,15 @@ export default function Modal({ open, onClose, title, subtitle, children, size =
     return () => { document.body.style.overflow = ""; };
   }, [open]);
 
-  if (!open) return null;
+  // `open` only ever flips to true from a client-side interaction, so `document`
+  // is always available by then — no need for a mount-effect/state round-trip.
+  if (!open || typeof document === "undefined") return null;
 
-  return (
+  // Rendered via portal directly on document.body so `position: fixed` is always
+  // relative to the viewport — the dashboard layout wraps pages in a Framer
+  // Motion <motion.main>, which sets an inline transform/will-change style that
+  // would otherwise turn it into the containing block for fixed descendants.
+  return createPortal(
     <div
       onClick={onClose}
       style={{
@@ -147,6 +154,7 @@ export default function Modal({ open, onClose, title, subtitle, children, size =
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
