@@ -113,9 +113,18 @@ function SearchableDropdown({
   );
 }
 
-/* ── InlineDropdown (for status/assignee) ── */
-function InlineDropdown({ trigger, children, width = 180 }: { trigger: React.ReactNode; children: React.ReactNode; width?: number }) {
-  const [open, setOpen] = useState(false);
+/* ── InlineDropdown (for status/assignee) ──
+   Open state is uncontrolled by default; pass `open`/`onOpenChange` to control
+   it externally (e.g. to force-close the dropdown before showing a modal). */
+function InlineDropdown({
+  trigger, children, width = 180, open: controlledOpen, onOpenChange,
+}: {
+  trigger: React.ReactNode; children: React.ReactNode; width?: number;
+  open?: boolean; onOpenChange?: (open: boolean) => void;
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = onOpenChange ?? setInternalOpen;
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     function handle(e: MouseEvent) {
@@ -123,10 +132,10 @@ function InlineDropdown({ trigger, children, width = 180 }: { trigger: React.Rea
     }
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
-  }, []);
+  }, [setOpen]);
   return (
     <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
-      <div onClick={() => setOpen(o => !o)} style={{ cursor: "pointer" }}>{trigger}</div>
+      <div onClick={() => setOpen(!open)} style={{ cursor: "pointer" }}>{trigger}</div>
       {open && (
         <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 999, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", minWidth: width, overflow: "hidden" }}>
           {children}
@@ -149,6 +158,7 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
 
 function StatusCell({ task, onUpdate }: { task: Task; onUpdate: () => void }) {
   const [saving, setSaving] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [completeStep, setCompleteStep] = useState<"ask" | "manual" | null>(null);
   const [manualHours, setManualHours] = useState("");
   const sc = STATUS_COLORS[task.status] ?? STATUS_COLORS["not started"];
@@ -198,6 +208,7 @@ function StatusCell({ task, onUpdate }: { task: Task; onUpdate: () => void }) {
 
   async function handleSelect(newStatus: TaskStatus) {
     if (newStatus === "completed") {
+      setDropdownOpen(false);
       setCompleteStep("ask");
       return;
     }
@@ -236,7 +247,7 @@ function StatusCell({ task, onUpdate }: { task: Task; onUpdate: () => void }) {
 
   return (
     <>
-      <InlineDropdown width={150} trigger={
+      <InlineDropdown width={150} open={dropdownOpen} onOpenChange={setDropdownOpen} trigger={
         <div style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 20, background: sc.bg, color: sc.color, fontSize: 11, fontWeight: 700, cursor: "pointer", border: `1px solid ${sc.color}22`, opacity: saving ? 0.6 : 1 }}>
           {task.status.charAt(0).toUpperCase() + task.status.slice(1)}<ChevronDown size={10} />
         </div>
